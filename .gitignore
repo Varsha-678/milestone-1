@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# Databases
+*.db
+*.sqlite3
+
+# Uploads & Generated Results (Keep folders with .gitkeep)
+uploads/*
+!uploads/.gitkeep
+results/*
+!results/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# Models (Keep directory with README, and bundled models)
+models/*.pt
+!models/ppe_best.pt
+!models/yolov8n.pt
+!models/README.md
+
+# Environment
+.env
+.env.local
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
