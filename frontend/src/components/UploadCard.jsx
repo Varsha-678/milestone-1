@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { 
   UploadCloud, 
-  FileCheck, 
   FileVideo, 
   FileImage, 
   X, 
@@ -9,11 +8,12 @@ import {
   AlertCircle, 
   CheckCircle2, 
   Loader2,
-  HardHat,
-  Shield,
-  Eye
+  Eye,
+  Sparkles,
+  Check
 } from 'lucide-react';
 import { analyzeFile } from '../services/api';
+import { playSound } from '../utils/soundEffects';
 
 const ALLOWED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'avi', 'mov'];
 
@@ -24,17 +24,40 @@ export default function UploadCard({ onAnalysisComplete }) {
   const [isDragging, setIsDragging] = useState(false);
   const [confThreshold, setConfThreshold] = useState(0.25);
   
-  // PPE Policy toggles
+  // PPE Policy checklist
   const [requiredItems, setRequiredItems] = useState(['helmet', 'vest']);
-  
-  // State
+  const [activePreset, setActivePreset] = useState('construction'); // 'construction', 'plant', 'cleanroom', 'custom'
+
+  // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [progressStep, setProgressStep] = useState('');
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState(null);
 
   const fileInputRef = useRef(null);
 
+  const stepsList = [
+    'Verifying file signature & magic byte structure...',
+    'Executing Ultralytics YOLOv8 neural object detection...',
+    'Evaluating compliance against workplace safety policy...',
+    'Finalizing inspection record & generating downloadable report...'
+  ];
+
+  // Quick Preset Handlers
+  const handlePresetSelect = (preset) => {
+    playSound('click');
+    setActivePreset(preset);
+    if (preset === 'construction') {
+      setRequiredItems(['helmet', 'vest']);
+    } else if (preset === 'plant') {
+      setRequiredItems(['helmet', 'vest', 'mask']);
+    } else if (preset === 'cleanroom') {
+      setRequiredItems(['mask']);
+    }
+  };
+
   const toggleRequiredItem = (item) => {
+    playSound('click');
+    setActivePreset('custom');
     setRequiredItems(prev => 
       prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
     );
@@ -45,7 +68,7 @@ export default function UploadCard({ onAnalysisComplete }) {
     if (!files || files.length === 0) return;
 
     if (files.length > 1) {
-      setErrorMessage("Please select only one file per submission.");
+      setErrorMessage("Please select only one file per inspection submission.");
       return;
     }
 
@@ -62,13 +85,28 @@ export default function UploadCard({ onAnalysisComplete }) {
       return;
     }
 
+    playSound('click');
     setSelectedFile(file);
     const isVid = ['mp4', 'avi', 'mov'].includes(ext);
     setFileType(isVid ? 'video' : 'image');
     
-    // Create preview URL
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
+  };
+
+  // Quick Sample Loader from public assets
+  const loadSampleMedia = async (samplePath, filename) => {
+    try {
+      playSound('click');
+      setErrorMessage(null);
+      const res = await fetch(samplePath);
+      if (!res.ok) throw new Error("Could not fetch sample media.");
+      const blob = await res.blob();
+      const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+      handleFileSelection([file]);
+    } catch (err) {
+      setErrorMessage("Failed to load sample image. You can browse and upload your own file.");
+    }
   };
 
   const handleDragOver = (e) => {
@@ -89,6 +127,7 @@ export default function UploadCard({ onAnalysisComplete }) {
   };
 
   const handleRemoveFile = () => {
+    playSound('click');
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
     }
@@ -105,25 +144,35 @@ export default function UploadCard({ onAnalysisComplete }) {
     if (!selectedFile) return;
     setIsSubmitting(true);
     setErrorMessage(null);
-    setProgressStep('Uploading & validating media contents...');
+    setCurrentStepIndex(0);
+
+    const stepInterval = setInterval(() => {
+      setCurrentStepIndex(prev => (prev < 3 ? prev + 1 : prev));
+    }, 700);
 
     try {
-      setTimeout(() => setProgressStep('Running Ultralytics YOLOv8 inference...'), 600);
-      setTimeout(() => setProgressStep('Evaluating compliance against safety policy...'), 1400);
-
       const result = await analyzeFile(
         selectedFile,
         confThreshold,
         requiredItems
       );
 
-      setProgressStep('Analysis finished successfully!');
+      clearInterval(stepInterval);
+      setCurrentStepIndex(3);
+
+      if (result.violation_count > 0) {
+        playSound('alert');
+      } else {
+        playSound('success');
+      }
+
       setTimeout(() => {
         setIsSubmitting(false);
         onAnalysisComplete(result);
-      }, 500);
+      }, 400);
 
     } catch (err) {
+      clearInterval(stepInterval);
       setIsSubmitting(false);
       setErrorMessage(err.message || 'An error occurred during safety analysis.');
     }
@@ -137,35 +186,69 @@ export default function UploadCard({ onAnalysisComplete }) {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 max-w-4xl mx-auto">
-      <div className="border-b border-slate-100 pb-4 mb-6">
-        <h2 className="text-xl font-bold text-slate-900">Upload Media for PPE Inspection</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Submit one image or video for workplace safety and protective equipment compliance analysis.
-        </p>
+    <div className="glass-card rounded-3xl border transition-all duration-300 bg-white dark:bg-slate-900/90 border-slate-200/80 dark:border-slate-800 shadow-xl p-6 sm:p-8 max-w-4xl mx-auto space-y-6">
+      
+      {/* Header with Title & Quick Sample Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-4">
+        <div>
+          <div className="flex items-center space-x-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-ping"></span>
+            <h2 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              AI Inspection Submission
+            </h2>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Submit a single workplace image or video for deep YOLOv8 PPE analysis & policy auditing.
+          </p>
+        </div>
+
+        {/* Quick Demo Sample Loaders */}
+        <div className="flex items-center space-x-2">
+          <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 hidden md:inline">Quick Demo:</span>
+          <button
+            type="button"
+            onClick={() => loadSampleMedia('/samples/sample-workers.jpg', 'workers_site_audit.jpg')}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/60 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 transition-all cursor-pointer hover:scale-105 active:scale-95"
+            title="Load sample workplace crew image"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <span>Sample Crew</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => loadSampleMedia('/samples/sample-ppe-gear.jpg', 'safety_equipment_check.jpg')}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer hover:scale-105 active:scale-95"
+            title="Load sample PPE equipment image"
+          >
+            <span>Sample Gear</span>
+          </button>
+        </div>
       </div>
 
       {errorMessage && (
-        <div className="mb-6 p-4 rounded-lg bg-rose-50 border border-rose-200 flex items-start space-x-3 text-rose-800">
-          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />
-          <div className="text-sm">
-            <span className="font-semibold">Validation Notice: </span>
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start space-x-3 text-rose-800 dark:text-rose-200 animate-in fade-in duration-200">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+          <div className="text-xs sm:text-sm">
+            <span className="font-bold">Notice: </span>
             {errorMessage}
           </div>
         </div>
       )}
 
-      {/* Drag & Drop Zone */}
+      {/* Drag & Drop Upload Container */}
       {!selectedFile ? (
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
+          onClick={() => {
+            playSound('click');
+            fileInputRef.current?.click();
+          }}
+          className={`relative border-2 border-dashed rounded-3xl p-10 sm:p-12 text-center cursor-pointer transition-all duration-300 overflow-hidden ${
             isDragging
-              ? 'border-teal-500 bg-teal-50/50'
-              : 'border-slate-300 hover:border-teal-600 bg-slate-50/50 hover:bg-slate-50'
+              ? 'border-teal-500 bg-teal-50/60 dark:bg-teal-950/30 scale-[1.01]'
+              : 'border-slate-300 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-400 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-50 dark:hover:bg-slate-800/70'
           }`}
         >
           <input
@@ -176,33 +259,38 @@ export default function UploadCard({ onAnalysisComplete }) {
             accept=".jpg,.jpeg,.png,.webp,.mp4,.avi,.mov"
           />
 
-          <div className="mx-auto w-14 h-14 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center mb-4">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-cyan-500 text-white flex items-center justify-center mb-4 shadow-lg shadow-teal-500/25">
             <UploadCloud className="w-8 h-8" />
           </div>
 
-          <h3 className="text-base font-semibold text-slate-800">
-            Click to browse or drag & drop media here
+          <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white">
+            Choose a media file or drag & drop here
           </h3>
-          <p className="text-xs text-slate-500 mt-1">
-            Supported Images: JPG, PNG, WEBP &nbsp;|&nbsp; Supported Videos: MP4, AVI, MOV (Max 50 MB)
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 max-w-md mx-auto">
+            Single file submission: Images (JPG, PNG, WEBP) or Videos (MP4, AVI, MOV) up to 50 MB
           </p>
-          <p className="text-xs font-medium text-teal-700 mt-3">
-            Single file submission only
-          </p>
+
+          <div className="mt-5 flex items-center justify-center space-x-2 text-xs font-semibold text-teal-600 dark:text-teal-400">
+            <span className="px-3 py-1 rounded-full bg-teal-100/60 dark:bg-teal-950/80 border border-teal-200 dark:border-teal-800">
+              Automatic Video Keyframe Sampling Active
+            </span>
+          </div>
         </div>
       ) : (
-        /* File Selected Preview Area */
+        /* Active File Preview & Inspection Controls */
         <div className="space-y-6">
-          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center space-x-3 w-full md:w-auto">
-              <div className="w-10 h-10 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
+          
+          {/* File Meta Header Bar */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center space-x-3 w-full sm:w-auto">
+              <div className="w-11 h-11 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 border border-teal-200 dark:border-teal-800">
                 {fileType === 'video' ? <FileVideo className="w-6 h-6" /> : <FileImage className="w-6 h-6" />}
               </div>
               <div className="overflow-hidden">
-                <p className="text-sm font-semibold text-slate-900 truncate max-w-xs sm:max-w-md">
+                <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
                   {selectedFile.name}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                   {fileType.toUpperCase()} &bull; {formatFileSize(selectedFile.size)}
                 </p>
               </div>
@@ -211,121 +299,185 @@ export default function UploadCard({ onAnalysisComplete }) {
             <button
               onClick={handleRemoveFile}
               disabled={isSubmitting}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-700 hover:bg-rose-100/60 border border-rose-200 transition-colors cursor-pointer"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-100/60 dark:hover:bg-rose-950/60 border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
-              <span>Remove File</span>
+              <span>Change File</span>
             </button>
           </div>
 
-          {/* Media Preview Box */}
-          <div className="bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center max-h-96 border border-slate-800">
+          {/* Interactive Media Preview Box with Optional Scanline */}
+          <div className="relative rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center max-h-[420px] border border-slate-800 shadow-inner group">
             {fileType === 'image' ? (
               <img
                 src={previewUrl}
                 alt="Selected preview"
-                className="max-h-96 w-auto object-contain"
+                className="max-h-[400px] w-auto object-contain transition-transform duration-300 group-hover:scale-[1.01]"
               />
             ) : (
               <video
                 src={previewUrl}
                 controls
-                className="max-h-96 w-full"
+                className="max-h-[400px] w-full"
               />
+            )}
+
+            {/* Futuristic Scanning animation overlay during inference */}
+            {isSubmitting && (
+              <div className="absolute inset-0 pointer-events-none bg-teal-500/10 flex flex-col justify-center items-center backdrop-blur-xs">
+                <div className="w-full h-1 bg-gradient-to-r from-transparent via-teal-400 to-transparent shadow-lg shadow-teal-400 animate-scanline"></div>
+              </div>
             )}
           </div>
 
-          {/* Configuration Accordion */}
-          <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-4">
-            <div className="flex items-center space-x-2 text-sm font-semibold text-slate-800">
-              <Sliders className="w-4 h-4 text-teal-700" />
-              <span>Safety Inspection Policy & Parameters</span>
+          {/* Safety Policy & Configuration Card */}
+          <div className="rounded-2xl border p-5 space-y-4 bg-slate-50/60 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-700/80">
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-sm font-bold text-slate-900 dark:text-white">
+                <Sliders className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span>Workplace Policy Configuration</span>
+              </div>
+              <span className="text-xs text-slate-400 font-mono">Rule Engine v1.0</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              {/* Required PPE Selection */}
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-2">
-                  Required PPE for Site Compliance:
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: 'helmet', label: 'Safety Helmet' },
-                    { id: 'vest', label: 'Safety Vest' },
-                    { id: 'mask', label: 'Safety Mask' },
-                  ].map((item) => (
+            {/* Quick Policy Presets */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
+                1-Click Safety Preset Profiles:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { id: 'construction', label: 'Construction Strict', desc: 'Helmet + Vest' },
+                  { id: 'plant', label: 'Industrial Plant', desc: 'Helmet + Vest + Mask' },
+                  { id: 'cleanroom', label: 'Cleanroom / Lab', desc: 'Face Mask' },
+                ].map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handlePresetSelect(p.id)}
+                    className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                      activePreset === p.id
+                        ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-500 dark:border-teal-400 ring-1 ring-teal-500'
+                        : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                    }`}
+                  >
+                    <span className="block text-xs font-bold text-slate-900 dark:text-white">{p.label}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">{p.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Checklist Items Toggle */}
+            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
+                Mandatory PPE Equipment for Site:
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'helmet', label: 'Safety Helmet / Hardhat' },
+                  { id: 'vest', label: 'High-Visibility Vest' },
+                  { id: 'mask', label: 'Safety Mask' },
+                ].map((item) => {
+                  const isChecked = requiredItems.includes(item.id);
+                  return (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => toggleRequiredItem(item.id)}
-                      className={`px-3 py-1 rounded-md text-xs font-medium border transition-colors ${
-                        requiredItems.includes(item.id)
-                          ? 'bg-teal-700 text-white border-teal-800'
-                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                      className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        isChecked
+                          ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                       }`}
                     >
-                      {requiredItems.includes(item.id) ? '✓ ' : '+ '}
-                      {item.label}
+                      {isChecked ? <Check className="w-3.5 h-3.5" /> : <span>+</span>}
+                      <span>{item.label}</span>
                     </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Required items not detected will be flagged as potential violations.
-                </p>
+                  );
+                })}
               </div>
+            </div>
 
-              {/* Confidence Threshold */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-semibold text-slate-700">
-                    Confidence Threshold:
-                  </label>
-                  <span className="text-xs font-bold text-teal-800 font-mono">
-                    {Math.round(confThreshold * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.10"
-                  max="0.80"
-                  step="0.05"
-                  value={confThreshold}
-                  onChange={(e) => setConfThreshold(parseFloat(e.target.value))}
-                  className="w-full accent-teal-700 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                  <span>10% (High Recall)</span>
-                  <span>45% (Balanced)</span>
-                  <span>80% (Strict)</span>
-                </div>
+            {/* Confidence Threshold Slider */}
+            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Confidence Threshold:
+                </label>
+                <span className="text-xs font-extrabold font-mono px-2.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                  {Math.round(confThreshold * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0.10"
+                max="0.80"
+                step="0.05"
+                value={confThreshold}
+                onChange={(e) => setConfThreshold(parseFloat(e.target.value))}
+                className="w-full accent-teal-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                <span>10% (High Sensitivity)</span>
+                <span>45% (Balanced)</span>
+                <span>80% (Strict Confidence)</span>
               </div>
             </div>
           </div>
 
-          {/* Submit Action */}
-          <div className="pt-2">
+          {/* Stepper Display during submission */}
+          {isSubmitting && (
+            <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/80 space-y-2">
+              <div className="flex items-center space-x-2 text-xs font-bold text-teal-800 dark:text-teal-300">
+                <Loader2 className="w-4 h-4 animate-spin text-teal-600 dark:text-teal-400" />
+                <span>Processing Inspection Pipeline:</span>
+              </div>
+              <div className="space-y-1.5 pt-1">
+                {stepsList.map((step, idx) => (
+                  <div key={idx} className="flex items-center space-x-2 text-xs">
+                    {idx < currentStepIndex ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    ) : idx === currentStepIndex ? (
+                      <span className="w-2 h-2 rounded-full bg-teal-500 animate-ping mx-1 shrink-0"></span>
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700 mx-1 shrink-0"></span>
+                    )}
+                    <span className={idx === currentStepIndex ? 'font-bold text-teal-900 dark:text-teal-200' : 'text-slate-500 dark:text-slate-400'}>
+                      {step}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Submit Action Button */}
+          <div>
             <button
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className={`w-full py-3.5 px-6 rounded-xl font-semibold text-white shadow-xs flex items-center justify-center space-x-2 transition-all ${
+              className={`w-full py-4 px-6 rounded-2xl font-extrabold text-sm shadow-lg flex items-center justify-center space-x-2.5 transition-all duration-200 ${
                 isSubmitting
-                  ? 'bg-slate-400 cursor-not-allowed'
-                  : 'bg-teal-800 hover:bg-teal-900 active:scale-[0.99] cursor-pointer'
+                  ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-teal-500 via-teal-600 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white shadow-teal-500/25 hover:shadow-teal-500/40 active:scale-[0.99] cursor-pointer'
               }`}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>{progressStep}</span>
+                  <span>Executing Pipeline...</span>
                 </>
               ) : (
                 <>
                   <Eye className="w-5 h-5" />
-                  <span>Analyze {fileType === 'video' ? 'Video' : 'Image'} with YOLOv8</span>
+                  <span>Analyze {fileType === 'video' ? 'Video Feed' : 'Workplace Image'} with YOLOv8</span>
                 </>
               )}
             </button>
           </div>
+
         </div>
       )}
     </div>

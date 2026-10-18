@@ -3,23 +3,75 @@ import { Navbar, ResultsViewer } from './components';
 import { DashboardPage, UploadPage, HistoryPage, AboutPage } from './pages';
 import { fetchHealth, fetchJobs, fetchJobDetail, deleteJob } from './services/api';
 import { AlertCircle, CheckCircle2, ShieldCheck, X } from 'lucide-react';
+import { playSound, isSoundEnabled } from './utils/soundEffects';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'upload', 'results', 'history', 'about'
   const [healthData, setHealthData] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [toast, setToast] = useState(null); // { type: 'success' | 'error', message: string }
+  
+  // Theme state (Dark Mode by default for a stunning modern look, persisted in localStorage)
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('safesight_dark_mode');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [soundActive, setSoundActive] = useState(() => isSoundEnabled());
 
   const pollIntervalRef = useRef(null);
 
+  // Sync dark mode class on document element
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('safesight_dark_mode', JSON.stringify(darkMode));
+    } catch {}
+  }, [darkMode]);
+
   const showToast = (message, type = 'success') => {
+    if (type === 'error') playSound('alert');
+    else playSound('success');
+
     setToast({ type, message });
     setTimeout(() => {
       setToast(null);
     }, 4500);
   };
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        return;
+      }
+      if (e.key === '1') {
+        playSound('click');
+        setActiveTab('dashboard');
+      } else if (e.key === '2') {
+        playSound('click');
+        setActiveTab('upload');
+      } else if (e.key === '3') {
+        playSound('click');
+        setActiveTab('history');
+      } else if (e.key === '4') {
+        playSound('click');
+        setActiveTab('about');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Load backend health and jobs list on startup
   const refreshData = async () => {
@@ -59,12 +111,11 @@ export default function App() {
           const updatedJobs = await fetchJobs();
           setJobs(updatedJobs);
 
-          // If currently selected job was processing, update its detail
           if (selectedJob && (selectedJob.processing_status === 'Processing' || selectedJob.processing_status === 'Uploaded')) {
             const currentUpdated = updatedJobs.find(j => j.id === selectedJob.id);
             if (currentUpdated && currentUpdated.processing_status !== selectedJob.processing_status) {
               setSelectedJob(currentUpdated);
-              showToast(`Analysis for "${currentUpdated.original_filename}" completed!`, 'success');
+              showToast(`Video analysis for "${currentUpdated.original_filename}" completed!`, 'success');
             }
           }
         } catch (e) {
@@ -121,7 +172,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased selection:bg-teal-100 selection:text-teal-900">
+    <div className={`min-h-screen flex flex-col font-sans antialiased transition-colors duration-300 ${
+      darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
+    }`}>
       {/* Navigation Header */}
       <Navbar 
         activeTab={activeTab} 
@@ -129,28 +182,33 @@ export default function App() {
           setActiveTab(tab);
           if (tab !== 'results') setSelectedJob(null);
         }} 
-        healthData={healthData} 
+        healthData={healthData}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        soundActive={soundActive}
+        setSoundActive={setSoundActive}
+        onLaunchDemo={() => setActiveTab('upload')}
       />
 
       {/* Floating Notification Toast */}
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 transition-all transform animate-in fade-in slide-in-from-bottom-3 duration-300">
-          <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold ${
+        <div className="fixed bottom-6 right-6 z-50 transition-all transform animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className={`flex items-center space-x-3 px-5 py-3.5 rounded-2xl shadow-xl border text-xs font-bold backdrop-blur-md ${
             toast.type === 'error'
-              ? 'bg-rose-50 text-rose-900 border-rose-300'
-              : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+              ? 'bg-rose-950/90 text-rose-200 border-rose-800'
+              : 'bg-emerald-950/90 text-emerald-200 border-emerald-800'
           }`}>
             {toast.type === 'error' ? (
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
             ) : (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             )}
             <span>{toast.message}</span>
             <button 
               onClick={() => setToast(null)}
-              className="text-slate-400 hover:text-slate-700 ml-2"
+              className="text-slate-400 hover:text-white ml-2 p-1 rounded-lg"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -165,6 +223,7 @@ export default function App() {
             onStartNewAnalysis={() => setActiveTab('upload')}
             onViewJob={handleViewJob}
             onDeleteJob={handleDeleteJob}
+            darkMode={darkMode}
           />
         )}
 
@@ -172,6 +231,7 @@ export default function App() {
           <UploadPage
             healthData={healthData}
             onAnalysisComplete={handleAnalysisComplete}
+            darkMode={darkMode}
           />
         )}
 
@@ -183,6 +243,7 @@ export default function App() {
               setSelectedJob(null);
               setActiveTab('upload');
             }}
+            darkMode={darkMode}
           />
         )}
 
@@ -192,26 +253,34 @@ export default function App() {
             onViewJob={handleViewJob}
             onDeleteJob={handleDeleteJob}
             onStartNewAnalysis={() => setActiveTab('upload')}
+            darkMode={darkMode}
           />
         )}
 
         {activeTab === 'about' && (
-          <AboutPage healthData={healthData} />
+          <AboutPage healthData={healthData} darkMode={darkMode} />
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-auto py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-5 h-5 rounded-md bg-teal-800 text-white flex items-center justify-center">
-              <ShieldCheck className="w-3.5 h-3.5" />
+      {/* High-Tech Footer with Telemetry */}
+      <footer className="border-t transition-colors duration-300 bg-white/60 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 mt-auto py-6 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-4">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
+              <ShieldCheck className="w-4 h-4" />
             </div>
-            <span className="font-semibold text-slate-700">SafeSight AI</span>
-            <span>&bull; Workplace Safety & PPE Compliance Analyzer</span>
+            <span className="font-extrabold text-slate-800 dark:text-slate-200">SafeSight AI Operations</span>
+            <span>&bull;</span>
+            <span>Workplace Safety & PPE Intelligence Engine</span>
           </div>
-          <div>
-            <span>Milestone 1 Project &bull; Built with FastAPI & YOLOv8</span>
+
+          <div className="flex items-center space-x-3 text-[11px] font-mono">
+            <span className="flex items-center space-x-1 text-teal-600 dark:text-teal-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>FastAPI + YOLOv8 Active</span>
+            </span>
+            <span>&bull;</span>
+            <span className="hidden sm:inline text-slate-400">Shortcuts: [1] Hub [2] Scan [3] Log</span>
           </div>
         </div>
       </footer>
