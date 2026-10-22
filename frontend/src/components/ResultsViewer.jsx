@@ -16,28 +16,86 @@ import {
   ZoomIn, 
   ZoomOut, 
   Columns,
-  Info
+  Info,
+  ChevronLeft,
+  ChevronRight,
+  Video,
+  Loader2,
+  Sparkles,
+  Sliders,
+  Eye
 } from 'lucide-react';
-import { getReportDownloadUrl } from '../services/api';
+import { getReportDownloadUrl, fetchJobDetail } from '../services/api';
 import { playSound } from '../utils/soundEffects';
 
-export default function ResultsViewer({ job, onBackToDashboard, onNewAnalysis }) {
+export default function ResultsViewer({ job, onBackToDashboard, onNewAnalysis, darkMode }) {
+  const [detailedJob, setDetailedJob] = useState(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [activeMediaTab, setActiveMediaTab] = useState('annotated'); // 'annotated', 'original', 'split'
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
   const [videoFrameFilter, setVideoFrameFilter] = useState('all'); // 'all', 'violations', 'compliant'
   const [hoveredDetIndex, setHoveredDetIndex] = useState(null);
   const [boxFilter, setBoxFilter] = useState('all'); // 'all', 'ppe', 'violations'
+  const [detectionScope, setDetectionScope] = useState('frame'); // 'frame' (active keyframe), 'all' (entire video)
+  const [complianceScope, setComplianceScope] = useState('overall'); // 'overall', 'frame'
   const [isPlayingFrames, setIsPlayingFrames] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1); // 1, 1.4, 1.8
 
   const autoplayTimerRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const videoPlayerRef = useRef(null);
 
-  const isVideo = job ? job.media_type === 'video' : false;
-  const rawResults = job && Array.isArray(job.detection_results) ? job.detection_results : [];
+  // Active job reference: either fetched full detail or passed in job prop
+  const activeJob = detailedJob || job;
+
+  // Self-healing: if activeJob is missing detection_results or is still processing, fetch details automatically
+  useEffect(() => {
+    let isMounted = true;
+    if (activeJob?.id && (!activeJob.detection_results || activeJob.detection_results.length === 0 || activeJob.processing_status === 'Processing')) {
+      setIsLoadingDetail(true);
+      fetchJobDetail(activeJob.id)
+        .then(fullData => {
+          if (isMounted && fullData) {
+            setDetailedJob(fullData);
+          }
+        })
+        .catch(err => {
+          console.warn('Could not auto-fetch job detail:', err);
+        })
+        .finally(() => {
+          if (isMounted) setIsLoadingDetail(false);
+        });
+    }
+
+    // Polling if still in progress
+    if (activeJob?.id && (activeJob.processing_status === 'Processing' || activeJob.processing_status === 'Uploaded')) {
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const polled = await fetchJobDetail(activeJob.id);
+          if (isMounted && polled) {
+            setDetailedJob(polled);
+            if (polled.processing_status === 'Completed' || polled.processing_status === 'Failed') {
+              if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            }
+          }
+        } catch (e) {
+          console.error('Job polling error:', e);
+        }
+      }, 1800);
+    }
+
+    return () => {
+      isMounted = false;
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [activeJob?.id, activeJob?.processing_status]);
+
+  const isVideo = activeJob ? activeJob.media_type === 'video' : false;
+  const rawResults = activeJob && Array.isArray(activeJob.detection_results) ? activeJob.detection_results : [];
   const videoFrames = isVideo ? rawResults : [];
 
-  // Frame autoplay slideshow (called unconditionally before any return!)
+  // Frame autoplay slideshow
   useEffect(() => {
     if (isPlayingFrames && isVideo && videoFrames.length > 1) {
       autoplayTimerRef.current = setInterval(() => {
@@ -51,13 +109,13 @@ export default function ResultsViewer({ job, onBackToDashboard, onNewAnalysis })
     };
   }, [isPlayingFrames, isVideo, videoFrames.length]);
 
-  if (!job) {
+  if (!activeJob) {
     return (
-      <div className="glass-card rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center max-w-lg mx-auto my-12 bg-white dark:bg-slate-900">
+      <div className="glass-card rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center max-w-lg mx-auto my-12 bg-white dark:bg-slate-900 shadow-xl">
         <p className="text-slate-600 dark:text-slate-300 font-semibold">No inspection record selected.</p>
         <button
           onClick={onBackToDashboard}
-          className="mt-4 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
+          className="mt-4 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition-all"
         >
           Return to Dashboard
         </button>
@@ -65,10 +123,55 @@ export default function ResultsViewer({ job, onBackToDashboard, onNewAnalysis })
     );
   }
 
-  const compliance = job.compliance_details || {};
-  const statusLabel = compliance.status_label || 'Evaluated';
-  const complianceScore = job.compliance_score ?? 0;
-  const videoMeta = job.video_metadata || {};
+  // Processing state display
+  if (activeJob.processing_status === 'Processing' || activeJob.processing_status === 'Uploaded') {
+    return (
+      <div className="max-w-2xl mx-auto my-12 glass-card rounded-3xl border border-orange-200 dark:border-orange-900/60 p-8 sm:p-10 bg-white/95 dark:bg-slate-900/95 shadow-2xl text-center space-y-6">
+        <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-4 border-orange-500/20 animate-ping"></div>
+          <div className="w-16 h-16 rounded-2xl bg-orange-50 dark:bg-orange-950/60 border border-orange-300 dark:border-orange-800 flex items-center justify-center text-orange-600 dark:text-orange-400 shadow-md">
+            <Loader2 className="w-8 h-8 animate-spin" />
+          </div>
+        </div>
+
+        <div>
+          <span className="px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 text-xs font-extrabold uppercase tracking-wider">
+            YOLOv8 Engine Running
+          </span>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white mt-3">
+            Analyzing Video Stream...
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
+            Extracting periodic sampled keyframes, detecting PPE compliance items, and evaluating OSHA safety requirements.
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-left text-xs space-y-2.5 font-mono">
+          <div className="flex justify-between text-slate-600 dark:text-slate-300">
+            <span>Target Video:</span>
+            <span className="font-bold text-slate-900 dark:text-white truncate max-w-xs">{activeJob.original_filename}</span>
+          </div>
+          <div className="flex justify-between text-slate-600 dark:text-slate-300">
+            <span>Model:</span>
+            <span className="font-bold text-teal-600 dark:text-teal-400">{activeJob.model_identifier || 'ppe_best.pt'}</span>
+          </div>
+          <div className="flex justify-between text-slate-600 dark:text-slate-300">
+            <span>Status:</span>
+            <span className="font-bold text-orange-600 dark:text-orange-400 animate-pulse">Processing Keyframes</span>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+          This view will update automatically the moment frame inference completes.
+        </p>
+      </div>
+    );
+  }
+
+  const compliance = activeJob.compliance_details || {};
+  const statusLabel = compliance.status_label || (activeJob.violation_count > 0 ? 'Safety Violations Detected' : 'Fully Compliant');
+  const complianceScore = activeJob.compliance_score ?? (compliance.compliance_percentage ?? 0);
+  const videoMeta = activeJob.video_metadata || {};
   
   const filteredFrames = videoFrames.filter(frame => {
     if (videoFrameFilter === 'violations') return (frame.violation_count || 0) > 0;
@@ -78,24 +181,62 @@ export default function ResultsViewer({ job, onBackToDashboard, onNewAnalysis })
 
   const activeVideoFrame = videoFrames[selectedFrameIndex] || videoFrames[0] || null;
 
-  // Active detections
-  const currentDetections = isVideo 
-    ? (activeVideoFrame?.detections || [])
-    : rawResults;
-
+  // Frame compliance vs Overall video compliance
   const currentFrameCompliance = isVideo
     ? (activeVideoFrame?.compliance || compliance)
     : compliance;
+
+  const activeCompliance = (isVideo && complianceScope === 'frame')
+    ? currentFrameCompliance
+    : compliance;
+
+  // Active detections for current keyframe
+  const frameDetections = isVideo 
+    ? (activeVideoFrame?.detections || [])
+    : rawResults;
+
+  // All video detections aggregated across all sampled frames
+  const allVideoDetections = isVideo
+    ? videoFrames.flatMap((f, fIdx) => (f.detections || []).map(d => ({
+        ...d,
+        frameIndex: fIdx,
+        sample_number: f.sample_number,
+        timestamp_sec: f.timestamp_sec
+      })))
+    : rawResults;
+
+  const currentDetections = (isVideo && detectionScope === 'all')
+    ? allVideoDetections
+    : frameDetections;
+
+  // Filter detections by box category
+  const displayedDetections = currentDetections.filter(d => {
+    if (boxFilter === 'ppe') return d.is_ppe;
+    if (boxFilter === 'violations') return d.is_violation;
+    return true;
+  });
 
   const toggleAutoplay = () => {
     playSound('click');
     setIsPlayingFrames(!isPlayingFrames);
   };
 
-  const originalMediaUrl = `/uploads/${job.stored_filename}`;
+  const handleNextFrame = () => {
+    if (videoFrames.length === 0) return;
+    playSound('click');
+    setSelectedFrameIndex(prev => (prev + 1) % videoFrames.length);
+  };
+
+  const handlePrevFrame = () => {
+    if (videoFrames.length === 0) return;
+    playSound('click');
+    setSelectedFrameIndex(prev => (prev - 1 + videoFrames.length) % videoFrames.length);
+  };
+
+  const originalMediaUrl = `/uploads/${activeJob.stored_filename}`;
   const resultMediaUrl = isVideo 
-    ? (activeVideoFrame?.annotated_frame_url || job.result_media_path || originalMediaUrl)
-    : (job.result_media_path || originalMediaUrl);
+    ? (activeVideoFrame?.annotated_frame_url || activeJob.result_media_path || originalMediaUrl)
+    : (activeJob.result_media_path || originalMediaUrl);
 
   const getStatusColor = (status) => {
     if (status === 'Fully Compliant') return 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800';
@@ -107,24 +248,31 @@ export default function ResultsViewer({ job, onBackToDashboard, onNewAnalysis })
   const copySummary = () => {
     playSound('click');
     const text = `SafeSight AI Inspection Summary
-File: ${job.original_filename}
-Record ID: ${job.id}
+File: ${activeJob.original_filename}
+Record ID: ${activeJob.id}
+Type: ${activeJob.media_type.toUpperCase()}
 Status: ${statusLabel}
 Compliance Score: ${complianceScore}%
-Total Detections: ${job.detection_count}
-Violations: ${job.violation_count}
-Model: ${job.model_identifier || 'ppe_best.pt'}`;
+Total Detections: ${activeJob.detection_count}
+Violations: ${activeJob.violation_count}
+Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
     navigator.clipboard.writeText(text);
     setCopiedSummary(true);
     setTimeout(() => setCopiedSummary(false), 2500);
   };
 
-  // Filter detections to display
-  const displayedDetections = currentDetections.filter(d => {
-    if (boxFilter === 'ppe') return d.is_ppe;
-    if (boxFilter === 'violations') return d.is_violation;
-    return true;
-  });
+  // Compute Evaluated and Detected count smoothly
+  const evaluatedCount = activeCompliance.denominator ?? (isVideo && complianceScope === 'overall' ? (compliance.denominator || activeJob.detection_count || 0) : (currentFrameCompliance.denominator || 0));
+  const detectedCount = activeCompliance.numerator ?? (isVideo && complianceScope === 'overall' ? (compliance.numerator || Math.max(0, (activeJob.detection_count || 0) - (activeJob.violation_count || 0))) : (currentFrameCompliance.numerator || 0));
+
+  // Resolved lists of required and missing items
+  const detectedRequiredPPE = activeCompliance.detected_required_items && activeCompliance.detected_required_items.length > 0
+    ? activeCompliance.detected_required_items
+    : (compliance.detected_required_items || currentFrameCompliance.detected_required_items || []);
+
+  const missingViolationsPPE = activeCompliance.missing_items && activeCompliance.missing_items.length > 0
+    ? activeCompliance.missing_items
+    : (compliance.missing_items || currentFrameCompliance.missing_items || []);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -144,26 +292,35 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white truncate max-w-md">
-              {job.original_filename}
+              {activeJob.original_filename}
             </h1>
             <span className={`text-xs font-bold px-3 py-1 rounded-full border shadow-2xs ${getStatusColor(statusLabel)}`}>
               {statusLabel}
             </span>
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-              {job.media_type}
+            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-950/80 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+              {activeJob.media_type}
             </span>
+            {isLoadingDetail && (
+              <span className="flex items-center space-x-1 text-xs text-teal-600 dark:text-teal-400 font-semibold animate-pulse">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Syncing details...</span>
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center space-x-3 text-xs text-slate-500 dark:text-slate-400 mt-1 pl-11">
-            <span>ID: <code className="font-mono text-slate-700 dark:text-slate-300 font-semibold">{job.id.slice(0, 8)}...</code></span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-1 pl-11">
+            <span>ID: <code className="font-mono text-slate-700 dark:text-slate-300 font-semibold">{activeJob.id.slice(0, 8)}...</code></span>
             <span>&bull;</span>
-            <span>Model: <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{job.model_identifier || 'ppe_best.pt'}</span></span>
+            <span>Model: <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{activeJob.model_identifier || 'ppe_best.pt'}</span></span>
+            <span>&bull;</span>
+            <span>Detections: <span className="font-bold text-slate-800 dark:text-slate-200">{activeJob.detection_count}</span></span>
+            <span>&bull;</span>
+            <span>Violations: <span className="font-bold text-rose-600 dark:text-rose-400">{activeJob.violation_count}</span></span>
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          
           <button
             onClick={copySummary}
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
@@ -174,7 +331,7 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
           </button>
 
           <a
-            href={getReportDownloadUrl(job.id)}
+            href={getReportDownloadUrl(activeJob.id)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => playSound('click')}
@@ -197,11 +354,11 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
         </div>
       </div>
 
-      {/* Video Stream Profile & Playback Bar */}
+      {/* Video Interactive Control Banner (Scrubber & Player Quick Bar) */}
       {isVideo && (
         <div className="glass-card rounded-2xl border p-4 bg-white dark:bg-slate-900/90 border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-200 dark:border-indigo-800">
+            <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-200 dark:border-orange-800 shrink-0">
               <Film className="w-5 h-5" />
             </div>
             <div>
@@ -209,8 +366,11 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Video Keyframe Stream
                 </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                  {videoFrames.length} Sampled Frames
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300">
+                  {videoFrames.length} Keyframes Sampled
+                </span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300">
+                  {activeJob.detection_count} Total Detections
                 </span>
               </div>
               <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 font-mono mt-0.5">
@@ -220,9 +380,20 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Frame step backward */}
+            <button
+              onClick={handlePrevFrame}
+              disabled={videoFrames.length <= 1}
+              className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors cursor-pointer"
+              title="Previous Keyframe"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
             {/* Frame Slideshow Autoplay */}
             <button
               onClick={toggleAutoplay}
+              disabled={videoFrames.length <= 1}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                 isPlayingFrames
                   ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
@@ -230,7 +401,17 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
               }`}
             >
               {isPlayingFrames ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              <span>{isPlayingFrames ? 'Pause Slideshow' : 'Auto Playback'}</span>
+              <span>{isPlayingFrames ? 'Pause Slideshow' : 'Play Slideshow'}</span>
+            </button>
+
+            {/* Frame step forward */}
+            <button
+              onClick={handleNextFrame}
+              disabled={videoFrames.length <= 1}
+              className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors cursor-pointer"
+              title="Next Keyframe"
+            >
+              <ChevronRight className="w-4 h-4" />
             </button>
 
             {/* Filter Frames */}
@@ -267,91 +448,129 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
             {/* Visualizer Toolbar */}
             <div className="flex flex-wrap items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3 gap-3">
               <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <Layers className="w-4 h-4 text-orange-500 dark:text-orange-400" />
                 <span>
                   {isVideo 
-                    ? `Keyframe #${activeVideoFrame?.sample_number || selectedFrameIndex + 1} (${activeVideoFrame?.timestamp_sec || 0}s)`
+                    ? `Keyframe #${activeVideoFrame?.sample_number || selectedFrameIndex + 1} (${activeVideoFrame?.timestamp_sec || 0}s) — ${activeVideoFrame?.detections?.length || 0} Detections`
                     : 'YOLOv8 Detection Visualizer'}
                 </span>
               </span>
 
-              {/* View Switchers */}
+              {/* View Switchers: Available for BOTH Images and Videos */}
               <div className="flex items-center space-x-2">
-                {!isVideo && (
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl text-xs font-semibold">
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl text-xs font-semibold">
+                  <button
+                    onClick={() => { playSound('click'); setActiveMediaTab('annotated'); }}
+                    className={`px-3 py-1 rounded-lg transition-colors cursor-pointer flex items-center space-x-1 ${
+                      activeMediaTab === 'annotated' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold' : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>{isVideo ? 'Keyframe' : 'Annotated'}</span>
+                  </button>
+                  <button
+                    onClick={() => { playSound('click'); setActiveMediaTab('original'); }}
+                    className={`px-3 py-1 rounded-lg transition-colors cursor-pointer flex items-center space-x-1 ${
+                      activeMediaTab === 'original' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold' : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    {isVideo ? <Video className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{isVideo ? 'Video Player' : 'Original'}</span>
+                  </button>
+                  <button
+                    onClick={() => { playSound('click'); setActiveMediaTab('split'); }}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer hidden sm:flex items-center space-x-1 ${
+                      activeMediaTab === 'split' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold' : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                    title="Side-by-side comparison"
+                  >
+                    <Columns className="w-3.5 h-3.5" />
+                    <span>Compare</span>
+                  </button>
+                </div>
+
+                {/* Zoom Controls (for image and keyframe views) */}
+                {activeMediaTab !== 'original' && (
+                  <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">
                     <button
-                      onClick={() => { playSound('click'); setActiveMediaTab('annotated'); }}
-                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                        activeMediaTab === 'annotated' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 dark:text-slate-400'
-                      }`}
+                      onClick={() => setZoomLevel(prev => (prev > 1 ? prev - 0.3 : 1))}
+                      disabled={zoomLevel <= 1}
+                      className="p-1 rounded-lg text-slate-500 dark:text-slate-400 disabled:opacity-40 hover:text-slate-900 dark:hover:text-white"
+                      title="Zoom Out"
                     >
-                      Annotated
+                      <ZoomOut className="w-3.5 h-3.5" />
                     </button>
+                    <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 px-1">
+                      {Math.round(zoomLevel * 100)}%
+                    </span>
                     <button
-                      onClick={() => { playSound('click'); setActiveMediaTab('original'); }}
-                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                        activeMediaTab === 'original' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 dark:text-slate-400'
-                      }`}
+                      onClick={() => setZoomLevel(prev => (prev < 2 ? prev + 0.3 : 2))}
+                      disabled={zoomLevel >= 2}
+                      className="p-1 rounded-lg text-slate-500 dark:text-slate-400 disabled:opacity-40 hover:text-slate-900 dark:hover:text-white"
+                      title="Zoom In"
                     >
-                      Original
-                    </button>
-                    <button
-                      onClick={() => { playSound('click'); setActiveMediaTab('split'); }}
-                      className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer hidden sm:flex items-center space-x-1 ${
-                        activeMediaTab === 'split' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 dark:text-slate-400'
-                      }`}
-                      title="Side-by-side comparison"
-                    >
-                      <Columns className="w-3.5 h-3.5" />
-                      <span>Compare</span>
+                      <ZoomIn className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
-
-                {/* Zoom Controls */}
-                <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">
-                  <button
-                    onClick={() => setZoomLevel(prev => (prev > 1 ? prev - 0.3 : 1))}
-                    disabled={zoomLevel <= 1}
-                    className="p-1 rounded-lg text-slate-500 dark:text-slate-400 disabled:opacity-40 hover:text-slate-900 dark:hover:text-white"
-                    title="Zoom Out"
-                  >
-                    <ZoomOut className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 px-1">
-                    {Math.round(zoomLevel * 100)}%
-                  </span>
-                  <button
-                    onClick={() => setZoomLevel(prev => (prev < 2 ? prev + 0.3 : 2))}
-                    disabled={zoomLevel >= 2}
-                    className="p-1 rounded-lg text-slate-500 dark:text-slate-400 disabled:opacity-40 hover:text-slate-900 dark:hover:text-white"
-                    title="Zoom In"
-                  >
-                    <ZoomIn className="w-3.5 h-3.5" />
-                  </button>
-                </div>
               </div>
             </div>
 
             {/* Media Canvas Box */}
             <div className="relative rounded-2xl overflow-hidden bg-slate-950 min-h-[380px] max-h-[540px] flex items-center justify-center border border-slate-800 shadow-inner">
               
-              {activeMediaTab === 'split' ? (
-                /* Side-by-side comparison view */
-                <div className="grid grid-cols-2 gap-2 w-full p-2 h-full">
-                  <div className="flex flex-col items-center justify-center relative bg-slate-900/60 rounded-xl overflow-hidden p-1">
-                    <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
-                      Original
-                    </span>
-                    <img
-                      src={originalMediaUrl}
-                      alt="Original media"
-                      className="max-h-[460px] w-auto object-contain"
-                    />
+              {activeMediaTab === 'original' && isVideo ? (
+                /* Native HTML5 Video Player for Video Mode */
+                <div className="w-full h-full flex flex-col items-center justify-center p-3">
+                  <video
+                    ref={videoPlayerRef}
+                    src={originalMediaUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="max-h-[500px] w-full object-contain rounded-xl bg-black"
+                  />
+                  <div className="mt-2 text-xs text-slate-400 flex items-center space-x-3">
+                    <span>Smooth native video playback</span>
+                    <span>&bull;</span>
+                    <button
+                      onClick={() => {
+                        if (videoPlayerRef.current && activeVideoFrame) {
+                          videoPlayerRef.current.currentTime = activeVideoFrame.timestamp_sec;
+                          videoPlayerRef.current.play().catch(() => {});
+                        }
+                      }}
+                      className="text-orange-400 hover:text-orange-300 font-bold underline cursor-pointer"
+                    >
+                      Seek to active keyframe ({activeVideoFrame?.timestamp_sec || 0}s)
+                    </button>
                   </div>
-                  <div className="flex flex-col items-center justify-center relative bg-slate-900/60 rounded-xl overflow-hidden p-1">
-                    <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-teal-600 text-white text-[10px] font-bold">
-                      YOLOv8 Annotated
+                </div>
+              ) : activeMediaTab === 'split' ? (
+                /* Side-by-side comparison view */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full p-2 h-full">
+                  <div className="flex flex-col items-center justify-center relative bg-slate-900/80 rounded-xl overflow-hidden p-1 border border-slate-800">
+                    <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-black/80 text-white text-[10px] font-bold">
+                      {isVideo ? 'Original Video Stream' : 'Original Upload'}
+                    </span>
+                    {isVideo ? (
+                      <video
+                        src={originalMediaUrl}
+                        controls
+                        playsInline
+                        className="max-h-[460px] w-full object-contain"
+                      />
+                    ) : (
+                      <img
+                        src={originalMediaUrl}
+                        alt="Original media"
+                        className="max-h-[460px] w-auto object-contain"
+                      />
+                    )}
+                  </div>
+                  <div className="flex flex-col items-center justify-center relative bg-slate-900/80 rounded-xl overflow-hidden p-1 border border-slate-800">
+                    <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-orange-600 text-white text-[10px] font-bold">
+                      {isVideo ? `Annotated Keyframe (${activeVideoFrame?.timestamp_sec || 0}s)` : 'YOLOv8 Annotated'}
                     </span>
                     <img
                       src={resultMediaUrl}
@@ -361,7 +580,7 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                   </div>
                 </div>
               ) : (
-                /* Standard Zoomable View */
+                /* Standard Zoomable View (Annotated Keyframe or Image) */
                 <div className="overflow-auto max-h-[520px] w-full flex items-center justify-center p-2">
                   <img
                     src={activeMediaTab === 'original' ? originalMediaUrl : resultMediaUrl}
@@ -373,6 +592,38 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
               )}
             </div>
 
+            {/* Video Interactive Timeline Scrubber Range Slider (under visualizer) */}
+            {isVideo && videoFrames.length > 0 && activeMediaTab !== 'original' && (
+              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-orange-500" />
+                    <span>Timeline Scrubber</span>
+                  </span>
+                  <div className="flex items-center space-x-2 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                    <span className="font-bold text-orange-600 dark:text-orange-400">{activeVideoFrame?.timestamp_sec || 0}s</span>
+                    <span>/</span>
+                    <span>{videoMeta.duration_seconds || 0}s</span>
+                    <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold">
+                      Frame {selectedFrameIndex + 1}/{videoFrames.length}
+                    </span>
+                  </div>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.max(0, videoFrames.length - 1)}
+                  value={selectedFrameIndex}
+                  onChange={(e) => {
+                    const idx = parseInt(e.target.value, 10);
+                    setSelectedFrameIndex(idx);
+                  }}
+                  className="w-full accent-orange-500 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                />
+              </div>
+            )}
+
             {/* Color Legend & Interactive Box Filter */}
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex flex-wrap items-center gap-3">
@@ -383,7 +634,7 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-xs"></span>
-                  <span className="text-slate-700 dark:text-slate-300 font-medium">Direct Violation (Missing PPE)</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium">Direct Violation (NO-Mask, NO-Vest)</span>
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-xs"></span>
@@ -393,7 +644,7 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
             </div>
           </div>
 
-          {/* Video Keyframe Gallery (Interactive Scrubber) */}
+          {/* Video Keyframe Gallery (Interactive Scrubber Strip) */}
           {isVideo && videoFrames.length > 0 && (
             <div className="glass-card rounded-3xl border p-5 bg-white dark:bg-slate-900/90 border-slate-200/80 dark:border-slate-800 shadow-sm">
               <div className="flex items-center justify-between mb-3">
@@ -415,10 +666,11 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                       onClick={() => {
                         playSound('click');
                         setSelectedFrameIndex(frameIndex);
+                        if (activeMediaTab === 'original') setActiveMediaTab('annotated');
                       }}
                       className={`relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all duration-200 ${
                         isSelected 
-                          ? 'border-teal-500 ring-4 ring-teal-500/20 shadow-md scale-[1.03]' 
+                          ? 'border-orange-500 ring-4 ring-orange-500/25 shadow-md scale-[1.03]' 
                           : 'border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 opacity-80 hover:opacity-100'
                       }`}
                     >
@@ -450,39 +702,70 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
 
           {/* Interactive Detected Objects Table with Box Hover Highlighting */}
           <div className="glass-card rounded-3xl border p-5 bg-white dark:bg-slate-900/90 border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
-                <span>Detected Equipment & Entities ({displayedDetections.length})</span>
-              </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                  <span>Detected Equipment & Entities ({displayedDetections.length})</span>
+                </h3>
+              </div>
 
-              {/* Box Category Filter */}
-              <div className="flex items-center space-x-1 text-xs">
-                {['all', 'ppe', 'violations'].map(f => (
-                  <button
-                    key={f}
-                    onClick={() => { playSound('click'); setBoxFilter(f); }}
-                    className={`px-2 py-0.5 rounded-lg font-semibold capitalize transition-colors cursor-pointer ${
-                      boxFilter === f
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Scope Switcher for Video: Current Keyframe vs All Video Frames */}
+                {isVideo && (
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-semibold">
+                    <button
+                      onClick={() => setDetectionScope('frame')}
+                      className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                        detectionScope === 'frame'
+                          ? 'bg-orange-500 text-white font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      Keyframe #{activeVideoFrame?.sample_number || 1} ({frameDetections.length})
+                    </button>
+                    <button
+                      onClick={() => setDetectionScope('all')}
+                      className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                        detectionScope === 'all'
+                          ? 'bg-orange-500 text-white font-bold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      All Video ({allVideoDetections.length})
+                    </button>
+                  </div>
+                )}
+
+                {/* Box Category Filter */}
+                <div className="flex items-center space-x-1 text-xs">
+                  {['all', 'ppe', 'violations'].map(f => (
+                    <button
+                      key={f}
+                      onClick={() => { playSound('click'); setBoxFilter(f); }}
+                      className={`px-2 py-0.5 rounded-lg font-semibold capitalize transition-colors cursor-pointer ${
+                        boxFilter === f
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             {displayedDetections.length === 0 ? (
-              <p className="text-xs text-slate-500 dark:text-slate-400 italic py-3 text-center">
+              <p className="text-xs text-slate-500 dark:text-slate-400 italic py-4 text-center">
                 No objects matched the active category filter.
               </p>
             ) : (
-              <div className="overflow-x-auto max-h-56">
+              <div className="overflow-x-auto max-h-64">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="py-2.5 px-3">Class Label</th>
+                      {detectionScope === 'all' && <th className="py-2.5 px-3">Time</th>}
                       <th className="py-2.5 px-3">Confidence</th>
                       <th className="py-2.5 px-3">Status Category</th>
                       <th className="py-2.5 px-3">Bounding Box</th>
@@ -496,13 +779,19 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                         onMouseLeave={() => setHoveredDetIndex(null)}
                         className={`transition-colors cursor-pointer ${
                           hoveredDetIndex === idx 
-                            ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200' 
+                            ? 'bg-orange-50 dark:bg-orange-950/40 text-orange-900 dark:text-orange-200' 
                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                         }`}
                       >
-                        <td className="py-2 px-3 font-bold text-slate-900 dark:text-white">
-                          {det.class_name}
+                        <td className="py-2 px-3 font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
+                          <span className={`w-2 h-2 rounded-full ${det.is_violation ? 'bg-rose-500' : det.is_ppe ? 'bg-emerald-500' : 'bg-sky-500'}`}></span>
+                          <span>{det.class_name}</span>
                         </td>
+                        {detectionScope === 'all' && (
+                          <td className="py-2 px-3 font-mono text-slate-600 dark:text-slate-400">
+                            {det.timestamp_sec}s
+                          </td>
+                        )}
                         <td className="py-2 px-3 font-mono font-bold text-teal-600 dark:text-teal-400">
                           {Math.round(det.confidence * 100)}%
                         </td>
@@ -513,7 +802,7 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                                 ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
                                 : det.is_violation 
                                   ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800' 
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                  : 'bg-sky-100 dark:bg-sky-950/80 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
                             }`}
                           >
                             {det.is_ppe ? 'Compliant PPE' : det.is_violation ? 'Direct Violation' : 'Context'}
@@ -536,17 +825,47 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
           
           {/* Main Compliance Score Card with Animated Ring */}
           <div className="glass-card rounded-3xl border p-6 bg-white dark:bg-slate-900/90 border-slate-200/80 dark:border-slate-800 shadow-md">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Site Safety Compliance Score
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Site Safety Compliance Score
+              </h2>
+
+              {/* Video Scope Toggle (Overall vs Current Frame) */}
+              {isVideo && (
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[10px] font-bold">
+                  <button
+                    onClick={() => setComplianceScope('overall')}
+                    className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                      complianceScope === 'overall'
+                        ? 'bg-orange-500 text-white'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    Overall Video
+                  </button>
+                  <button
+                    onClick={() => setComplianceScope('frame')}
+                    className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                      complianceScope === 'frame'
+                        ? 'bg-orange-500 text-white'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    Keyframe #{activeVideoFrame?.sample_number || 1}
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="mt-4 flex items-center justify-between">
               <div>
                 <span className="text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white font-mono">
-                  {complianceScore !== null ? `${complianceScore}%` : 'N/A'}
+                  {complianceScope === 'frame' && activeVideoFrame?.compliance?.compliance_percentage !== undefined
+                    ? `${activeVideoFrame.compliance.compliance_percentage}%`
+                    : complianceScore !== null ? `${complianceScore}%` : 'N/A'}
                 </span>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-semibold">
-                  {statusLabel}
+                  {complianceScope === 'frame' ? (activeVideoFrame?.compliance?.status_label || statusLabel) : statusLabel}
                 </p>
               </div>
 
@@ -570,11 +889,13 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                 Audit Calculation Rule:
               </span>
               <p className="font-mono text-teal-800 dark:text-teal-300 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] leading-relaxed">
-                {compliance.formula || 'Compliance = (Detected Required / Policy Required) * 100'}
+                {complianceScope === 'frame' 
+                  ? (activeVideoFrame?.compliance?.formula || 'Compliance = (Detected Required / Policy Required) * 100')
+                  : (compliance.formula || 'Compliance = (Detected Required / Policy Required) * 100')}
               </p>
               <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 flex justify-between font-mono">
-                <span>Evaluated Items: {compliance.denominator || 0}</span>
-                <span>Detected: {compliance.numerator || 0}</span>
+                <span>Evaluated Items: <strong className="text-slate-800 dark:text-slate-200">{evaluatedCount}</strong></span>
+                <span>Detected: <strong className="text-teal-600 dark:text-teal-400">{detectedCount}</strong></span>
               </div>
             </div>
           </div>
@@ -588,9 +909,9 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 <span>Detected Required PPE</span>
               </div>
-              {currentFrameCompliance.detected_required_items && currentFrameCompliance.detected_required_items.length > 0 ? (
+              {detectedRequiredPPE.length > 0 ? (
                 <div className="space-y-1.5">
-                  {currentFrameCompliance.detected_required_items.map((item, i) => (
+                  {detectedRequiredPPE.map((item, i) => (
                     <div 
                       key={i} 
                       className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-900 dark:text-emerald-200 font-semibold"
@@ -611,9 +932,9 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
                 <span>Missing PPE / Potential Violations</span>
               </div>
-              {currentFrameCompliance.missing_items && currentFrameCompliance.missing_items.length > 0 ? (
-                <div className="space-y-1.5">
-                  {currentFrameCompliance.missing_items.map((item, i) => (
+              {missingViolationsPPE.length > 0 ? (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {missingViolationsPPE.map((item, i) => (
                     <div 
                       key={i} 
                       className="p-2.5 rounded-xl bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-900 dark:text-rose-200 font-semibold"
@@ -630,12 +951,12 @@ Model: ${job.model_identifier || 'ppe_best.pt'}`;
           </div>
 
           {/* Safety & Compliance Notice */}
-          <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-900 dark:text-amber-200 space-y-1">
-            <div className="flex items-center space-x-1.5 font-bold text-amber-800 dark:text-amber-300">
+          <div className="p-4 rounded-2xl bg-orange-50/70 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/50 text-xs text-orange-900 dark:text-orange-200 space-y-1">
+            <div className="flex items-center space-x-1.5 font-bold text-orange-800 dark:text-orange-300">
               <Info className="w-4 h-4" />
               <span>Inspection Notice</span>
             </div>
-            <p className="text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-300/80">
+            <p className="text-[11px] leading-relaxed text-orange-900/90 dark:text-orange-300/80">
               SafeSight AI inferences assist safety officers. Computer vision detections are probabilistic and do not substitute statutory OSHA audits.
             </p>
           </div>

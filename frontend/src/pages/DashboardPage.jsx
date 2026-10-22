@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   HardHat, 
   AlertTriangle, 
@@ -28,7 +28,7 @@ import {
   Tooltip 
 } from 'recharts';
 import StatCard from '../components/StatCard';
-import { getReportDownloadUrl } from '../services/api';
+import { getReportDownloadUrl, fetchAnalytics } from '../services/api';
 import { playSound } from '../utils/soundEffects';
 
 export default function DashboardPage({ 
@@ -41,6 +41,20 @@ export default function DashboardPage({
 }) {
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'violations', 'compliant', 'video'
   const [tableSearch, setTableSearch] = useState('');
+  const [analytics, setAnalytics] = useState(null);
+
+  // Fetch full system-wide analytics on mount and whenever jobs change
+  useEffect(() => {
+    let isMounted = true;
+    fetchAnalytics()
+      .then(data => {
+        if (isMounted) setAnalytics(data);
+      })
+      .catch(err => {
+        console.warn('Could not load analytics:', err);
+      });
+    return () => { isMounted = false; };
+  }, [jobs.length]);
 
   // Aggregate statistics
   const totalJobs = jobs.length;
@@ -48,19 +62,30 @@ export default function DashboardPage({
   const failedJobs = jobs.filter(j => j.processing_status === 'Failed');
   const processingJobs = jobs.filter(j => j.processing_status === 'Processing' || j.processing_status === 'Uploaded');
 
-  const totalDetections = completedJobs.reduce((acc, j) => acc + (j.detection_count || 0), 0);
-  const totalViolations = completedJobs.reduce((acc, j) => acc + (j.violation_count || 0), 0);
+  const totalDetections = analytics?.total_detections ?? completedJobs.reduce((acc, j) => acc + (j.detection_count || 0), 0);
+  const totalViolations = analytics?.total_violations ?? completedJobs.reduce((acc, j) => acc + (j.violation_count || 0), 0);
 
   // Compliance Breakdown data for Pie Chart
-  const fullyCompliantCount = completedJobs.filter(j => 
-    j.compliance_details?.status_label === 'Fully Compliant'
-  ).length;
-  const violationCount = completedJobs.filter(j => 
-    j.compliance_details?.status_label === 'Safety Violations Detected'
-  ).length;
-  const insufficientCount = completedJobs.filter(j => 
-    j.compliance_details?.status_label === 'Insufficient Data'
-  ).length;
+  const fullyCompliantCount = analytics?.compliance_summary?.fully_compliant ?? completedJobs.filter(j => {
+    const status = j.compliance_details?.status_label;
+    if (status === 'Fully Compliant') return true;
+    if (status) return false;
+    return (j.compliance_score >= 100 && (j.violation_count || 0) === 0 && (j.detection_count || 0) > 0);
+  }).length;
+
+  const violationCount = analytics?.compliance_summary?.violations_detected ?? completedJobs.filter(j => {
+    const status = j.compliance_details?.status_label;
+    if (status === 'Safety Violations Detected') return true;
+    if (status) return false;
+    return (j.violation_count || 0) > 0;
+  }).length;
+
+  const insufficientCount = analytics?.compliance_summary?.insufficient_data ?? completedJobs.filter(j => {
+    const status = j.compliance_details?.status_label;
+    if (status === 'Insufficient Data') return true;
+    if (status) return false;
+    return (j.detection_count || 0) === 0;
+  }).length;
 
   const complianceChartData = [
     { name: 'Fully Compliant', value: fullyCompliantCount, color: '#10b981' },
@@ -73,29 +98,33 @@ export default function DashboardPage({
     : [{ name: 'Awaiting Media', value: 1, color: darkMode ? '#334155' : '#e2e8f0' }];
 
   // Detections by PPE Category across completed inspections
-  const categoryCounts = { 'Helmet': 0, 'Vest': 0, 'Mask': 0, 'Worker': 0, 'Violations': 0 };
-  completedJobs.forEach(job => {
-    const results = Array.isArray(job.detection_results) ? job.detection_results : [];
-    results.forEach(d => {
-      const items = d.detections ? d.detections : [d];
-      items.forEach(item => {
-        const name = (item.class_name || '').toLowerCase();
-        if (item.is_violation || name.includes('no-')) categoryCounts['Violations'] += 1;
-        else if (name.includes('hardhat') || name.includes('helmet')) categoryCounts['Helmet'] += 1;
-        else if (name.includes('vest')) categoryCounts['Vest'] += 1;
-        else if (name.includes('mask')) categoryCounts['Mask'] += 1;
-        else if (name.includes('person') || name.includes('worker')) categoryCounts['Worker'] += 1;
+  const categoryCounts = analytics?.category_distribution || { 'Helmet': 0, 'Vest': 0, 'Mask': 0, 'Worker': 0, 'Violations': 0 };
+  
+  if (!analytics?.category_distribution) {
+    completedJobs.forEach(job => {
+      const results = Array.isArray(job.detection_results) ? job.detection_results : [];
+      results.forEach(d => {
+        const items = d.detections ? d.detections : [d];
+        items.forEach(item => {
+          const name = (item.class_name || '').toLowerCase();
+          if (item.is_violation || name.includes('no-')) categoryCounts['Violations'] += 1;
+          else if (name.includes('hardhat') || name.includes('helmet')) categoryCounts['Helmet'] += 1;
+          else if (name.includes('vest')) categoryCounts['Vest'] += 1;
+          else if (name.includes('mask')) categoryCounts['Mask'] += 1;
+          else if (name.includes('person') || name.includes('worker')) categoryCounts['Worker'] += 1;
+        });
       });
     });
-  });
+  }
 
   const ppeDistributionData = [
-    { name: 'Helmet', count: categoryCounts['Helmet'] },
-    { name: 'Vest', count: categoryCounts['Vest'] },
-    { name: 'Mask', count: categoryCounts['Mask'] },
-    { name: 'Worker', count: categoryCounts['Worker'] },
-    { name: 'Violations', count: categoryCounts['Violations'] },
+    { name: 'Helmet', count: categoryCounts['Helmet'] || 0, color: '#14b8a6' },
+    { name: 'Vest', count: categoryCounts['Vest'] || 0, color: '#f97316' },
+    { name: 'Mask', count: categoryCounts['Mask'] || 0, color: '#3b82f6' },
+    { name: 'Worker', count: categoryCounts['Worker'] || 0, color: '#8b5cf6' },
+    { name: 'Violations', count: categoryCounts['Violations'] || 0, color: '#f43f5e' },
   ];
+
 
   // Filter recent records
   const filteredRecords = jobs.filter(job => {
@@ -347,10 +376,13 @@ export default function DashboardPage({
                 />
                 <Bar 
                   dataKey="count" 
-                  fill={darkMode ? '#14b8a6' : '#0f766e'} 
                   radius={[6, 6, 0, 0]} 
                   name="Detections" 
-                />
+                >
+                  {ppeDistributionData.map((entry, index) => (
+                    <Cell key={`bar-cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>

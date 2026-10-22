@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import json
 import io
 import cv2
 import numpy as np
@@ -256,6 +257,92 @@ async def analyze_file(
         )
 
         return job.to_dict()
+
+
+@router.get("/analytics")
+def get_analytics(db: Session = Depends(get_db)):
+    """
+    Computes overall workplace PPE compliance metrics, category distributions,
+    and aggregate inspection statistics for the dashboard.
+    """
+    jobs = db.query(AnalysisJob).filter(AnalysisJob.processing_status == "Completed").all()
+    
+    total_completed = len(jobs)
+    total_detections = sum(j.detection_count or 0 for j in jobs)
+    total_violations = sum(j.violation_count or 0 for j in jobs)
+
+    compliance_summary = {
+        "fully_compliant": 0,
+        "violations_detected": 0,
+        "insufficient_data": 0
+    }
+
+    categories = {
+        "Helmet": 0,
+        "Vest": 0,
+        "Mask": 0,
+        "Worker": 0,
+        "Violations": 0
+    }
+    class_counts = {}
+
+    for j in jobs:
+        comp = j.compliance_details or {}
+        status = comp.get("status_label")
+        if not status:
+            if (j.violation_count or 0) > 0:
+                status = "Safety Violations Detected"
+            elif (j.detection_count or 0) > 0:
+                status = "Fully Compliant"
+            else:
+                status = "Insufficient Data"
+
+        if status == "Fully Compliant":
+            compliance_summary["fully_compliant"] += 1
+        elif status == "Safety Violations Detected":
+            compliance_summary["violations_detected"] += 1
+        else:
+            compliance_summary["insufficient_data"] += 1
+
+        raw_dets = j.detection_results
+        if raw_dets:
+            if isinstance(raw_dets, str):
+                try:
+                    raw_dets = json.loads(raw_dets)
+                except Exception:
+                    raw_dets = []
+            
+            if isinstance(raw_dets, list):
+                for item in raw_dets:
+                    item_dets = item.get("detections", [item]) if isinstance(item, dict) and "detections" in item else [item]
+                    for d in item_dets:
+                        if not isinstance(d, dict):
+                            continue
+                        cname = d.get("class_name", "")
+                        if not cname:
+                            continue
+                        class_counts[cname] = class_counts.get(cname, 0) + 1
+                        lower = cname.lower()
+                        if d.get("is_violation") or "no-" in lower:
+                            categories["Violations"] += 1
+                        elif "hardhat" in lower or "helmet" in lower:
+                            categories["Helmet"] += 1
+                        elif "vest" in lower:
+                            categories["Vest"] += 1
+                        elif "mask" in lower:
+                            categories["Mask"] += 1
+                        elif "person" in lower or "worker" in lower:
+                            categories["Worker"] += 1
+
+    return {
+        "total_jobs": db.query(AnalysisJob).count(),
+        "completed_jobs": total_completed,
+        "total_detections": total_detections,
+        "total_violations": total_violations,
+        "compliance_summary": compliance_summary,
+        "category_distribution": categories,
+        "class_counts": class_counts
+    }
 
 
 @router.get("/jobs", response_model=List[JobSummary])

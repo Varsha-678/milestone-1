@@ -13,6 +13,7 @@ from backend.app.config import (
 from backend.app.database.session import init_db
 from backend.app.services.yolo_service import get_yolo_manager
 from backend.app.api.routes import router as api_router
+from backend.app.api.auth_routes import router as auth_router
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ app.mount("/reports", StaticFiles(directory=str(REPORT_DIR)), name="reports")
 
 # Include API routes
 app.include_router(api_router)
+app.include_router(auth_router, prefix="/api")
 
 
 # Global Exception Handler

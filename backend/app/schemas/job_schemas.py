@@ -55,8 +55,10 @@ class JobSummary(BaseModel):
     detection_count: int
     violation_count: int
     compliance_score: Optional[float]
+    compliance_details: Optional[Dict[str, Any]] = None
     result_media_path: Optional[str]
     error_message: Optional[str]
+
 
 
 class JobDetail(BaseModel):

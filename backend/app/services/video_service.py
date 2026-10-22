@@ -49,6 +49,11 @@ def process_video_job(
 
     total_detections_sum = 0
     total_violations_sum = 0
+    total_numerator = 0
+    total_denominator = 0
+    all_detected_required = set()
+    all_missing_items = []
+    all_direct_violations = []
     compliance_percentages: List[float] = []
 
     try:
@@ -84,6 +89,13 @@ def process_video_job(
 
                 total_detections_sum += d_count
                 total_violations_sum += v_count
+
+                # Accumulate compliance items
+                all_detected_required.update(frame_compliance.get("detected_required_items", []))
+                all_missing_items.extend(frame_compliance.get("missing_items", []))
+                all_direct_violations.extend(frame_compliance.get("direct_violations", []))
+                total_numerator += frame_compliance.get("numerator", 0)
+                total_denominator += frame_compliance.get("denominator", 0)
 
                 if frame_compliance.get("compliance_percentage") is not None:
                     compliance_percentages.append(frame_compliance["compliance_percentage"])
@@ -129,6 +141,12 @@ def process_video_job(
         "sample_interval_sec": VIDEO_SAMPLE_INTERVAL_SECONDS,
         "total_detections_all_frames": total_detections_sum,
         "total_violations_all_frames": total_violations_sum,
+        "numerator": total_numerator,
+        "denominator": total_denominator,
+        "detected_required_items": sorted(list(all_detected_required)),
+        "missing_items": list(dict.fromkeys(all_missing_items)),
+        "direct_violations": list(dict.fromkeys(all_direct_violations)),
+        "policy_required_items": policy_required_categories or ["Helmet", "Vest"],
         "note": "Sampled-frame analysis evaluates periodic keyframes. Events occurring strictly between sampled intervals may not be captured."
     }
 
