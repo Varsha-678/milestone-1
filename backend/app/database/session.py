@@ -22,4 +22,5 @@ def get_db():
 
 def init_db():
     from backend.app.database import models  # noqa
+    from backend.app.database import document_models  # noqa
     Base.metadata.create_all(bind=engine)

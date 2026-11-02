@@ -11,7 +11,8 @@ import {
   Sparkles, 
   AlertTriangle,
   Lock,
-  LogOut
+  LogOut,
+  FileText
 } from 'lucide-react';
 import { playSound, setSoundEnabled } from '../utils/soundEffects';
 import SafeSightLogo from './SafeSightLogo';
@@ -54,6 +55,7 @@ export default function Navbar({
     { id: 'dashboard', label: 'Command Center', shortLabel: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'AI Scanner', shortLabel: 'Analyze', icon: UploadCloud, badge: 'Live' },
     { id: 'history', label: 'Audit Records', shortLabel: 'History', icon: History },
+    { id: 'docs', label: 'Document Intelligence', shortLabel: 'Doc AI', icon: FileText, badge: 'M2' },
     { id: 'about', label: 'Architecture', shortLabel: 'About', icon: Info },
   ];
 

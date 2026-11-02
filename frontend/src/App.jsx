@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Navbar, ResultsViewer, SafeSightIcon } from './components';
-import { DashboardPage, UploadPage, HistoryPage, AboutPage, LoginPage } from './pages';
+import { DashboardPage, UploadPage, HistoryPage, AboutPage, LoginPage, DocumentIntelligencePage } from './pages';
 import { fetchHealth, fetchJobs, fetchJobDetail, deleteJob, logoutUser } from './services/api';
 import { AlertCircle, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { playSound, isSoundEnabled } from './utils/soundEffects';
@@ -16,8 +16,8 @@ const getInitialTab = () => {
     const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
     const target = path || hash;
     if (target === 'login' || target === 'signin' || target === 'auth') return 'login';
-    if (['dashboard', 'upload', 'results', 'history', 'about'].includes(target)) {
-      return target;
+    if (['dashboard', 'upload', 'results', 'history', 'about', 'docs', 'document-intelligence'].includes(target)) {
+      return target === 'document-intelligence' ? 'docs' : target;
     }
   } catch (e) {}
   return 'dashboard';
@@ -162,6 +162,9 @@ export default function App() {
       } else if (e.key === '4') {
         playSound('click');
         navigateToTab('about');
+      } else if (e.key === '5') {
+        playSound('click');
+        navigateToTab('docs');
       }
     };
 
@@ -390,6 +393,10 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'docs' && (
+              <DocumentIntelligencePage darkMode={darkMode} />
+            )}
+
             {activeTab === 'about' && (
               <AboutPage healthData={healthData} darkMode={darkMode} />
             )}
@@ -418,7 +425,7 @@ export default function App() {
                   <span>FastAPI + YOLOv8 Active</span>
                 </span>
                 <span>&bull;</span>
-                <span className="hidden sm:inline text-slate-400">Shortcuts: [1] Hub [2] Scan [3] Log</span>
+                <span className="hidden sm:inline text-slate-400">Shortcuts: [1] Hub [2] Scan [3] Log [4] Arch [5] Docs</span>
               </>
             ) : (
               <span className="flex items-center space-x-1.5 text-slate-400">

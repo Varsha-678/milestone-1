@@ -10,8 +10,9 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 RESULT_DIR = BASE_DIR / "results"
 REPORT_DIR = BASE_DIR / "reports"
 MODELS_DIR = BASE_DIR / "models"
+DOCUMENTS_DIR = BASE_DIR / "uploads" / "documents"
 
-for folder in [UPLOAD_DIR, RESULT_DIR, REPORT_DIR, MODELS_DIR]:
+for folder in [UPLOAD_DIR, RESULT_DIR, REPORT_DIR, MODELS_DIR, DOCUMENTS_DIR]:
     folder.mkdir(parents=True, exist_ok=True)
 
 # Model Settings
