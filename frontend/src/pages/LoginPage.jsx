@@ -14,7 +14,7 @@ import { loginUser, registerUser } from '../services/api';
 import { playSound } from '../utils/soundEffects';
 import { SafeSightIcon } from '../components/SafeSightLogo';
 
-export default function LoginPage({ onLoginSuccess, darkMode = true }) {
+export default function LoginPage({ onLoginSuccess, darkMode = false }) {
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

@@ -4,3 +4,7 @@ export { default as HistoryPage } from './HistoryPage';
 export { default as AboutPage } from './AboutPage';
 export { default as LoginPage } from './LoginPage';
 export { default as DocumentIntelligencePage } from './DocumentIntelligencePage';
+export { default as MultimodalRAGPage } from './MultimodalRAGPage';
+export { default as ViolationMonitoringPage } from './ViolationMonitoringPage';
+export { default as ReportsPage } from './ReportsPage';
+export { default as SettingsPage } from './SettingsPage';

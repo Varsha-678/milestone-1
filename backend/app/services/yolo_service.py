@@ -12,6 +12,63 @@ except ImportError:
 from backend.app.config import PPE_MODEL_PATH, DEFAULT_CONF_THRESHOLD
 
 
+def compute_iou(box1: List[int], box2: List[int]) -> float:
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    if inter == 0:
+        return 0.0
+    a1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    a2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = a1 + a2 - inter
+    return (inter / float(union)) if union > 0 else 0.0
+
+
+def compute_ioa(box_inner: List[int], box_outer: List[int]) -> float:
+    x1 = max(box_inner[0], box_outer[0])
+    y1 = max(box_inner[1], box_outer[1])
+    x2 = min(box_inner[2], box_outer[2])
+    y2 = min(box_inner[3], box_outer[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    a_inner = (box_inner[2] - box_inner[0]) * (box_inner[3] - box_inner[1])
+    return (inter / float(a_inner)) if a_inner > 0 else 0.0
+
+
+def apply_nms(detections: List[Dict[str, Any]], iou_thresh: float = 0.35) -> List[Dict[str, Any]]:
+    if not detections:
+        return []
+    sorted_dets = sorted(detections, key=lambda x: x["confidence"], reverse=True)
+    kept = []
+    for d in sorted_dets:
+        box = d["box"]
+        cls = d["class_name"].lower()
+        duplicate = False
+        for k in kept:
+            k_cls = k["class_name"].lower()
+            is_same_category = (cls == k_cls) or (
+                ("mask" in cls and "mask" in k_cls) or
+                ("helmet" in cls and "helmet" in k_cls) or
+                ("hardhat" in cls and "hardhat" in k_cls) or
+                ("vest" in cls and "vest" in k_cls)
+            )
+            if is_same_category:
+                iou = compute_iou(box, k["box"])
+                ioa = max(compute_ioa(box, k["box"]), compute_ioa(k["box"], box))
+                if iou > iou_thresh or ioa > 0.60:
+                    duplicate = True
+                    break
+            elif "person" in cls and "person" in k_cls:
+                iou = compute_iou(box, k["box"])
+                if iou > 0.50 or compute_ioa(box, k["box"]) > 0.70:
+                    duplicate = True
+                    break
+        if not duplicate:
+            kept.append(d)
+    return kept
+
+
 class YOLOModelManager:
     _instance: Optional["YOLOModelManager"] = None
 
@@ -91,24 +148,25 @@ class YOLOModelManager:
         if image_bgr is None or image_bgr.size == 0:
             raise ValueError("Input image array is empty or invalid.")
 
-        # Execute prediction without verbose logging
+        # Execute prediction with tightened NMS iou threshold
         results = self.model.predict(
             source=image_bgr,
             conf=conf_threshold,
+            iou=0.45,
             verbose=False
         )
 
-        detections: List[Dict[str, Any]] = []
+        raw_detections: List[Dict[str, Any]] = []
         annotated_image = image_bgr.copy()
 
         if not results or len(results) == 0:
-            return annotated_image, detections
+            return annotated_image, []
 
         res = results[0]
         boxes = res.boxes
 
         if boxes is None or len(boxes) == 0:
-            return annotated_image, detections
+            return annotated_image, []
 
         h, w = image_bgr.shape[:2]
 
@@ -125,7 +183,7 @@ class YOLOModelManager:
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w - 1, x2), min(h - 1, y2)
 
-            detections.append({
+            raw_detections.append({
                 "class_id": cls_id,
                 "class_name": cls_name,
                 "confidence": round(conf, 4),
@@ -135,8 +193,17 @@ class YOLOModelManager:
                 "color": hex_color
             })
 
+        # Apply robust Non-Maximum Suppression to remove overlapping duplicate boxes
+        detections = apply_nms(raw_detections, iou_thresh=0.35)
+
+        # Draw deduplicated crisp bounding boxes on annotated_image
+        for d in detections:
+            x1, y1, x2, y2 = d["box"]
+            cls_name = d["class_name"]
+            conf = d["confidence"]
+            hex_color = d["color"]
+
             # Convert hex color to BGR for OpenCV
-            # e.g., #16a34a -> (74, 163, 22)
             hex_clean = hex_color.lstrip("#")
             rgb = tuple(int(hex_clean[i:i+2], 16) for i in (0, 2, 4))
             bgr = (rgb[2], rgb[1], rgb[0])

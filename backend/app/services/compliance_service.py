@@ -57,12 +57,15 @@ def evaluate_compliance(
         cname = d["class_name"].lower()
         if d.get("is_violation", False):
             direct_violations.append(d["class_name"])
+            msg = None
             if "hardhat" in cname or "helmet" in cname:
-                missing_items.append("Safety Helmet (Direct violation observed: NO-Hardhat)")
+                msg = "Safety Helmet (Direct violation observed: NO-Hardhat)"
             elif "vest" in cname:
-                missing_items.append("Safety Vest (Direct violation observed: NO-Safety Vest)")
+                msg = "Safety Vest (Direct violation observed: NO-Safety Vest)"
             elif "mask" in cname:
-                missing_items.append("Safety Mask (Direct violation observed: NO-Mask)")
+                msg = "Safety Mask (Direct violation observed: NO-Mask)"
+            if msg and msg not in missing_items:
+                missing_items.append(msg)
 
     # Check for compliant items detected
     for cat in evaluable_categories:

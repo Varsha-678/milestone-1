@@ -2,19 +2,38 @@ import React from 'react';
 import { UploadCard } from '../components';
 import { ShieldCheck, Info, Cpu, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export default function UploadPage({ healthData, onAnalysisComplete, darkMode = false }) {
+export default function UploadPage({ healthData, onAnalysisComplete, darkMode = false, mediaType = 'all' }) {
   const supportedClasses = healthData?.supported_classes || [];
   const modelName = healthData?.model_name || 'ppe_best.pt';
+
+  const isImageMode = mediaType === 'image';
+  const isVideoMode = mediaType === 'video';
+
+  const pageTitle = isImageMode 
+    ? 'SafeSight AI • Image Detection Studio' 
+    : isVideoMode 
+    ? 'SafeSight AI • Video & CCTV Detection Studio' 
+    : 'SafeSight AI • Media Detection Studio';
+
+  const pageSubtitle = isImageMode
+    ? 'Submit a high-resolution workplace photograph or CCTV frame to perform neural PPE detection and policy compliance checking.'
+    : isVideoMode
+    ? 'Submit recorded workplace video or CCTV footage for automated keyframe sampling, timeline tracking, and violation auditing.'
+    : 'Submit a workplace image or recorded video for automated YOLOv8 PPE detection and regulatory safety policy compliance evaluation.';
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
       {/* Page Header */}
       <div className="text-center space-y-2">
+        <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20">
+          <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+          <span>{isImageMode ? 'Image PPE Inspection' : isVideoMode ? 'Video Stream Inspection' : 'Workplace Media Scanner'}</span>
+        </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          AI Workplace Media Scanner
+          {pageTitle}
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
-          Submit a single workplace image or video for automated YOLOv8 PPE detection and regulatory safety policy compliance evaluation.
+          {pageSubtitle}
         </p>
       </div>
 
@@ -61,7 +80,7 @@ export default function UploadPage({ healthData, onAnalysisComplete, darkMode = 
       </div>
 
       {/* Upload Card */}
-      <UploadCard onAnalysisComplete={onAnalysisComplete} />
+      <UploadCard onAnalysisComplete={onAnalysisComplete} darkMode={darkMode} mediaType={mediaType} />
     </div>
   );
 }

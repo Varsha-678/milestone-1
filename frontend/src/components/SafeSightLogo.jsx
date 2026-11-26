@@ -116,12 +116,14 @@ export function SafeSightIcon({ className = "w-10 h-10", size }) {
 }
 
 /**
- * Full SafeSight.AI Brand Header Logo (Icon + Styled Text)
+ * Full SafeSight AI Brand Header Logo (Icon + Styled Text)
  */
 export default function SafeSightLogo({ 
   size = "md", // "sm" | "md" | "lg"
+  brandName = "SafeSight",
+  brandSuffix = ".AI",
   showSubtitle = true,
-  subtitleText = "Industrial Computer Vision & PPE Audit",
+  subtitleText = "Workplace Safety Monitoring & PPE Intelligence",
   badgeText = null,
   className = ""
 }) {
@@ -147,15 +149,15 @@ export default function SafeSightLogo({
         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse"></span>
       </div>
 
-      {/* Brand Text: "SafeSight" in Light Orange, ".AI" in Teal */}
+      {/* Brand Text: "SafeSight" in Warm Orange, ".AI" in Teal */}
       <div>
         <div className="flex items-center space-x-2">
           <span className={`font-black tracking-tight leading-none ${textSizes[size] || textSizes.md}`}>
             <span className="text-orange-500 dark:text-orange-400 drop-shadow-xs">
-              SafeSight
+              {brandName}
             </span>
             <span className="text-teal-600 dark:text-teal-400">
-              .AI
+              {brandSuffix}
             </span>
           </span>
 

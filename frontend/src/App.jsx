@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Navbar, ResultsViewer, SafeSightIcon } from './components';
-import { DashboardPage, UploadPage, HistoryPage, AboutPage, LoginPage, DocumentIntelligencePage } from './pages';
+import { Header, Sidebar, ResultsViewer, SafeSightIcon } from './components';
+import { 
+  DashboardPage, 
+  UploadPage, 
+  HistoryPage, 
+  AboutPage, 
+  LoginPage, 
+  DocumentIntelligencePage, 
+  MultimodalRAGPage,
+  ViolationMonitoringPage,
+  ReportsPage,
+  SettingsPage
+} from './pages';
 import { fetchHealth, fetchJobs, fetchJobDetail, deleteJob, logoutUser } from './services/api';
 import { AlertCircle, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { playSound, isSoundEnabled } from './utils/soundEffects';
@@ -16,8 +27,28 @@ const getInitialTab = () => {
     const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
     const target = path || hash;
     if (target === 'login' || target === 'signin' || target === 'auth') return 'login';
-    if (['dashboard', 'upload', 'results', 'history', 'about', 'docs', 'document-intelligence'].includes(target)) {
-      return target === 'document-intelligence' ? 'docs' : target;
+    if ([
+      'dashboard', 
+      'image-detection', 
+      'video-detection', 
+      'upload', 
+      'results', 
+      'violations',
+      'violation-monitoring',
+      'reports',
+      'history', 
+      'settings',
+      'about', 
+      'docs', 
+      'document-intelligence', 
+      'multimodal', 
+      'rag'
+    ].includes(target)) {
+      if (target === 'document-intelligence') return 'docs';
+      if (target === 'rag') return 'multimodal';
+      if (target === 'upload') return 'image-detection';
+      if (target === 'violation-monitoring') return 'violations';
+      return target;
     }
   } catch (e) {}
   return 'dashboard';
@@ -41,17 +72,25 @@ export default function App() {
     }
   });
 
-  // Theme state (Dark Mode by default for a stunning modern look, persisted in localStorage)
+  // Theme state: Enforce Light Mode by default per mentor guidance (Clean & bright, strictly NO BLACK)
   const [darkMode, setDarkMode] = useState(() => {
     try {
+      const migrated = localStorage.getItem('safesight_theme_migrated_v3');
+      if (!migrated) {
+        localStorage.setItem('safesight_theme_migrated_v3', 'true');
+        localStorage.setItem('safesight_dark_mode', 'false');
+        return false;
+      }
       const saved = localStorage.getItem('safesight_dark_mode');
-      return saved !== null ? JSON.parse(saved) : true;
+      return saved !== null ? JSON.parse(saved) : false;
     } catch {
-      return true;
+      return false;
     }
   });
 
   const [soundActive, setSoundActive] = useState(() => isSoundEnabled());
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const pollIntervalRef = useRef(null);
 
@@ -165,6 +204,9 @@ export default function App() {
       } else if (e.key === '5') {
         playSound('click');
         navigateToTab('docs');
+      } else if (e.key === '6') {
+        playSound('click');
+        navigateToTab('multimodal');
       }
     };
 
@@ -302,21 +344,22 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans antialiased transition-colors duration-300 ${
+    <div className={`min-h-screen w-full flex flex-col font-sans antialiased transition-colors duration-300 ${
       darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
       {/* Top Header */}
-      <Navbar 
-        activeTab={activeTab} 
-        setActiveTab={navigateToTab} 
+      <Header 
+        onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
         healthData={healthData}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         soundActive={soundActive}
         setSoundActive={setSoundActive}
-        onLaunchDemo={() => navigateToTab('upload')}
+        onLaunchDemo={() => navigateToTab('image-detection')}
         currentUser={currentUser}
         onLogout={handleLogout}
+        activeTab={activeTab}
+        onNavigateTab={navigateToTab}
       />
 
       {/* Floating Notification Toast */}
@@ -343,99 +386,158 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Page Content Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {(!currentUser || activeTab === 'login') ? (
-          <LoginPage
-            onLoginSuccess={handleLoginSuccess}
+      {/* Main Workspace Layout (Sidebar + Content View) */}
+      <div className="pt-16 flex-1 flex w-full min-h-screen items-start">
+        {currentUser && activeTab !== 'login' && (
+          <Sidebar 
+            activeTab={activeTab}
+            setActiveTab={navigateToTab}
+            isCollapsed={isSidebarCollapsed}
+            setIsCollapsed={setIsSidebarCollapsed}
+            isMobileOpen={isMobileSidebarOpen}
+            setIsMobileOpen={setIsMobileSidebarOpen}
+            healthData={healthData}
             darkMode={darkMode}
+            currentUser={currentUser}
+            onLaunchDemo={() => navigateToTab('image-detection')}
+            onLogout={handleLogout}
           />
-        ) : (
-          <>
-            {activeTab === 'dashboard' && (
-              <DashboardPage
-                jobs={jobs}
-                healthData={healthData}
-                onStartNewAnalysis={() => navigateToTab('upload')}
-                onViewJob={handleViewJob}
-                onDeleteJob={handleDeleteJob}
-                darkMode={darkMode}
-              />
-            )}
-
-            {activeTab === 'upload' && (
-              <UploadPage
-                healthData={healthData}
-                onAnalysisComplete={handleAnalysisComplete}
-                darkMode={darkMode}
-              />
-            )}
-
-            {activeTab === 'results' && (
-              <ResultsViewer
-                job={selectedJob}
-                onBackToDashboard={() => navigateToTab('dashboard')}
-                onNewAnalysis={() => {
-                  setSelectedJob(null);
-                  navigateToTab('upload');
-                }}
-                darkMode={darkMode}
-              />
-            )}
-
-            {activeTab === 'history' && (
-              <HistoryPage
-                jobs={jobs}
-                onViewJob={handleViewJob}
-                onDeleteJob={handleDeleteJob}
-                onStartNewAnalysis={() => navigateToTab('upload')}
-                darkMode={darkMode}
-              />
-            )}
-
-            {activeTab === 'docs' && (
-              <DocumentIntelligencePage darkMode={darkMode} />
-            )}
-
-            {activeTab === 'about' && (
-              <AboutPage healthData={healthData} darkMode={darkMode} />
-            )}
-          </>
         )}
-      </main>
 
-      {/* Footer */}
-      <footer className="border-t transition-colors duration-300 bg-white/60 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 mt-auto py-6 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-4">
-          <div className="flex items-center space-x-2.5">
-            <SafeSightIcon className="w-6 h-6 shrink-0" />
-            <span className="font-extrabold text-slate-800 dark:text-slate-200">
-              <span className="text-orange-500 dark:text-orange-400">SafeSight</span>
-              <span className="text-teal-600 dark:text-teal-400">.AI</span> Operations
-            </span>
-            <span>&bull;</span>
-            <span>Workplace Safety & PPE Intelligence Engine</span>
-          </div>
-
-          <div className="flex items-center space-x-3 text-[11px] font-mono">
-            {currentUser ? (
+        {/* Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {(!currentUser || activeTab === 'login') ? (
+              <LoginPage
+                onLoginSuccess={handleLoginSuccess}
+                darkMode={darkMode}
+              />
+            ) : (
               <>
-                <span className="flex items-center space-x-1 text-teal-600 dark:text-teal-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>FastAPI + YOLOv8 Active</span>
+                {activeTab === 'dashboard' && (
+                  <DashboardPage
+                    jobs={jobs}
+                    healthData={healthData}
+                    onStartNewAnalysis={() => navigateToTab('image-detection')}
+                    onViewJob={handleViewJob}
+                    onDeleteJob={handleDeleteJob}
+                    darkMode={darkMode}
+                    currentUser={currentUser}
+                    onNavigateTab={navigateToTab}
+                  />
+                )}
+
+                {(activeTab === 'image-detection' || activeTab === 'upload') && (
+                  <UploadPage
+                    healthData={healthData}
+                    onAnalysisComplete={handleAnalysisComplete}
+                    darkMode={darkMode}
+                    mediaType="image"
+                  />
+                )}
+
+                {activeTab === 'video-detection' && (
+                  <UploadPage
+                    healthData={healthData}
+                    onAnalysisComplete={handleAnalysisComplete}
+                    darkMode={darkMode}
+                    mediaType="video"
+                  />
+                )}
+
+                {activeTab === 'results' && (
+                  <ResultsViewer
+                    job={selectedJob}
+                    onBackToDashboard={() => navigateToTab('dashboard')}
+                    onNewAnalysis={() => {
+                      setSelectedJob(null);
+                      navigateToTab('image-detection');
+                    }}
+                    darkMode={darkMode}
+                  />
+                )}
+
+                {activeTab === 'history' && (
+                  <HistoryPage
+                    jobs={jobs}
+                    onViewJob={handleViewJob}
+                    onDeleteJob={handleDeleteJob}
+                    onStartNewAnalysis={() => navigateToTab('image-detection')}
+                    darkMode={darkMode}
+                  />
+                )}
+
+                {activeTab === 'violations' && (
+                  <ViolationMonitoringPage 
+                    darkMode={darkMode}
+                    currentUser={currentUser}
+                    onNavigateTab={navigateToTab}
+                  />
+                )}
+
+                {activeTab === 'reports' && (
+                  <ReportsPage 
+                    darkMode={darkMode}
+                    currentUser={currentUser}
+                  />
+                )}
+
+                {activeTab === 'settings' && (
+                  <SettingsPage 
+                    darkMode={darkMode}
+                    healthData={healthData}
+                  />
+                )}
+
+                {activeTab === 'docs' && (
+                  <DocumentIntelligencePage darkMode={darkMode} />
+                )}
+
+                {activeTab === 'multimodal' && (
+                  <MultimodalRAGPage darkMode={darkMode} />
+                )}
+
+                {activeTab === 'about' && (
+                  <AboutPage healthData={healthData} darkMode={darkMode} />
+                )}
+              </>
+            )}
+          </main>
+
+          {/* Footer */}
+          <footer className="border-t transition-colors duration-300 bg-white/60 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 mt-auto py-5 backdrop-blur-md">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-4">
+              <div className="flex items-center space-x-2.5">
+                <SafeSightIcon className="w-6 h-6 shrink-0" />
+                <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                  <span className="text-orange-500 dark:text-orange-400">SafeSight</span>
+                  <span className="text-teal-600 dark:text-teal-400">.AI</span>
                 </span>
                 <span>&bull;</span>
-                <span className="hidden sm:inline text-slate-400">Shortcuts: [1] Hub [2] Scan [3] Log [4] Arch [5] Docs</span>
-              </>
-            ) : (
-              <span className="flex items-center space-x-1.5 text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
-                <span>Security Terminal &bull; Authentication Required</span>
-              </span>
-            )}
-          </div>
+                <span>Workplace Safety Monitoring &amp; PPE Intelligence</span>
+              </div>
+
+              <div className="flex items-center space-x-3 text-[11px] font-mono">
+                {currentUser ? (
+                  <>
+                    <span className="flex items-center space-x-1 text-teal-600 dark:text-teal-400">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span>FastAPI + YOLOv8 Active</span>
+                    </span>
+                    <span>&bull;</span>
+                    <span className="hidden sm:inline text-slate-400">Dashboard &bull; Images &bull; Videos &bull; Docs &bull; Reports &bull; M3 RAG</span>
+                  </>
+                ) : (
+                  <span className="flex items-center space-x-1.5 text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                    <span>Security Terminal &bull; Authentication Required</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </footer>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

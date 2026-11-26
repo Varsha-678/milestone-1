@@ -17,7 +17,7 @@ import { playSound } from '../utils/soundEffects';
 
 const ALLOWED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'avi', 'mov'];
 
-export default function UploadCard({ onAnalysisComplete }) {
+export default function UploadCard({ onAnalysisComplete, darkMode = false, mediaType = 'all' }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [fileType, setFileType] = useState(null); // 'image' or 'video'
@@ -256,7 +256,13 @@ export default function UploadCard({ onAnalysisComplete }) {
             ref={fileInputRef}
             onChange={(e) => handleFileSelection(e.target.files)}
             className="hidden"
-            accept=".jpg,.jpeg,.png,.webp,.mp4,.avi,.mov"
+            accept={
+              mediaType === 'image' 
+                ? '.jpg,.jpeg,.png,.webp' 
+                : mediaType === 'video' 
+                ? '.mp4,.avi,.mov' 
+                : '.jpg,.jpeg,.png,.webp,.mp4,.avi,.mov'
+            }
           />
 
           <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-tr from-teal-500 to-cyan-500 text-white flex items-center justify-center mb-4 shadow-lg shadow-teal-500/25">
@@ -264,10 +270,18 @@ export default function UploadCard({ onAnalysisComplete }) {
           </div>
 
           <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white">
-            Choose a media file or drag & drop here
+            {mediaType === 'image' 
+              ? 'Choose a workplace photo or drag & drop here' 
+              : mediaType === 'video' 
+              ? 'Choose CCTV video footage or drag & drop here' 
+              : 'Choose a media file or drag & drop here'}
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 max-w-md mx-auto">
-            Single file submission: Images (JPG, PNG, WEBP) or Videos (MP4, AVI, MOV) up to 50 MB
+            {mediaType === 'image' 
+              ? 'High-resolution images (JPG, PNG, WEBP) up to 25 MB' 
+              : mediaType === 'video' 
+              ? 'Video streams & clips (MP4, AVI, MOV) up to 50 MB with keyframe sampling' 
+              : 'Single file submission: Images (JPG, PNG, WEBP) or Videos (MP4, AVI, MOV) up to 50 MB'}
           </p>
 
           <div className="mt-5 flex items-center justify-center space-x-2 text-xs font-semibold text-teal-600 dark:text-teal-400">
@@ -307,12 +321,15 @@ export default function UploadCard({ onAnalysisComplete }) {
           </div>
 
           {/* Interactive Media Preview Box with Optional Scanline */}
-          <div className="relative rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center max-h-[420px] border border-slate-800 shadow-inner group">
+          <div className={`relative rounded-2xl overflow-hidden flex items-center justify-center max-h-[420px] border shadow-inner group ${
+            darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
+          }`}>
             {fileType === 'image' ? (
               <img
                 src={previewUrl}
                 alt="Selected preview"
                 className="max-h-[400px] w-auto object-contain transition-transform duration-300 group-hover:scale-[1.01]"
+                onError={(e) => { e.target.style.opacity = '0.7'; }}
               />
             ) : (
               <video

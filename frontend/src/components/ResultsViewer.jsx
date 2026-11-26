@@ -517,7 +517,9 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
             </div>
 
             {/* Media Canvas Box */}
-            <div className="relative rounded-2xl overflow-hidden bg-slate-950 min-h-[380px] max-h-[540px] flex items-center justify-center border border-slate-800 shadow-inner">
+            <div className={`relative rounded-2xl overflow-hidden min-h-[380px] max-h-[540px] flex items-center justify-center border shadow-inner ${
+              darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
+            }`}>
               
               {activeMediaTab === 'original' && isVideo ? (
                 /* Native HTML5 Video Player for Video Mode */
@@ -530,7 +532,7 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
                     preload="metadata"
                     className="max-h-[500px] w-full object-contain rounded-xl bg-black"
                   />
-                  <div className="mt-2 text-xs text-slate-400 flex items-center space-x-3">
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-3">
                     <span>Smooth native video playback</span>
                     <span>&bull;</span>
                     <button
@@ -540,7 +542,7 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
                           videoPlayerRef.current.play().catch(() => {});
                         }
                       }}
-                      className="text-orange-400 hover:text-orange-300 font-bold underline cursor-pointer"
+                      className="text-orange-600 dark:text-orange-400 hover:text-orange-500 font-bold underline cursor-pointer"
                     >
                       Seek to active keyframe ({activeVideoFrame?.timestamp_sec || 0}s)
                     </button>
@@ -549,7 +551,9 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
               ) : activeMediaTab === 'split' ? (
                 /* Side-by-side comparison view */
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full p-2 h-full">
-                  <div className="flex flex-col items-center justify-center relative bg-slate-900/80 rounded-xl overflow-hidden p-1 border border-slate-800">
+                  <div className={`flex flex-col items-center justify-center relative rounded-xl overflow-hidden p-1 border ${
+                    darkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
                     <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-black/80 text-white text-[10px] font-bold">
                       {isVideo ? 'Original Video Stream' : 'Original Upload'}
                     </span>
@@ -565,10 +569,13 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
                         src={originalMediaUrl}
                         alt="Original media"
                         className="max-h-[460px] w-auto object-contain"
+                        onError={(e) => { e.target.style.opacity = '0.7'; }}
                       />
                     )}
                   </div>
-                  <div className="flex flex-col items-center justify-center relative bg-slate-900/80 rounded-xl overflow-hidden p-1 border border-slate-800">
+                  <div className={`flex flex-col items-center justify-center relative rounded-xl overflow-hidden p-1 border ${
+                    darkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
                     <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-orange-600 text-white text-[10px] font-bold">
                       {isVideo ? `Annotated Keyframe (${activeVideoFrame?.timestamp_sec || 0}s)` : 'YOLOv8 Annotated'}
                     </span>
@@ -576,6 +583,7 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
                       src={resultMediaUrl}
                       alt="Annotated media"
                       className="max-h-[460px] w-auto object-contain"
+                      onError={(e) => { e.target.style.opacity = '0.7'; }}
                     />
                   </div>
                 </div>
@@ -587,6 +595,7 @@ Model: ${activeJob.model_identifier || 'ppe_best.pt'}`;
                     alt="Analyzed media frame"
                     style={{ transform: `scale(${zoomLevel})`, transition: 'transform 0.2s ease-out' }}
                     className="max-h-[480px] w-auto object-contain origin-center"
+                    onError={(e) => { e.target.style.opacity = '0.7'; }}
                   />
                 </div>
               )}

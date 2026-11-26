@@ -20,25 +20,27 @@
   }
 
   .dark {
-    /* Dark / High-Tech Cyber Command Center Tokens */
+    /* Dark Slate Command Center Tokens (No pitch-black void) */
     --primary: #14b8a6;
     --primary-hover: #2dd4bf;
     --primary-glow: rgba(20, 184, 166, 0.35);
     --accent: #38bdf8;
-    --bg-page: #070b14;
-    --bg-card: #0f172a;
-    --border-subtle: #1e293b;
+    --bg-page: #0f172a;
+    --bg-card: #1e293b;
+    --border-subtle: #334155;
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
   }
 
-  body {
+  html, body {
     margin: 0;
     padding: 0;
     font-family: var(--font-sans);
     background-color: var(--bg-page);
     color: var(--text-primary);
     min-height: 100vh;
+    max-width: 100vw;
+    overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.3s ease, color 0.3s ease;
   }
